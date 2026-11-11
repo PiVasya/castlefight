@@ -1,0 +1,14 @@
+/target/
+/dist/
+*.class
+*.log
+/.idea/
+/.vscode/
+/.env
+# Do not commit runtime state, maps, tokens, backups, or player files.
+/maps/
+/navigation/
+/diagnostics/
+/backups/
+/ops.txt
+/castles-map.properties
