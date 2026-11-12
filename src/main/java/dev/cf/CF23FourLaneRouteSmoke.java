@@ -24,6 +24,14 @@ public final class CF23FourLaneRouteSmoke {
         Path root=Path.of(args[0]).toAbsolutePath();
         if(Files.exists(root))throw new IllegalArgumentException("Directory already exists: "+root);
         Files.createDirectories(root.resolve("cf"));
+        // Tiny synthetic Anvil location header: declare one region chunk at (0,0).
+        // The actual smoke world uses a generator; this file is only needed to
+        // exercise the *real* fingerprint + persistent-cache + chunk-load path.
+        Path regions=root.resolve("dimensions/minecraft/overworld/region");
+        Files.createDirectories(regions);
+        byte[] header=new byte[8192];
+        header[3]=1; // nonzero location for chunk (0,0), per Anvil region header
+        Files.write(regions.resolve("r.0.0.mca"),header);
         Properties properties=new Properties();
         properties.setProperty("schema","3.0");
         properties.setProperty("dot.max-gap","12");
@@ -79,7 +87,21 @@ public final class CF23FourLaneRouteSmoke {
                 check(path.red.getLast().distanceSquared(new Pos(-8.5,8,6.5))<.001,"red reaches blue castle");
             }
             check(lanes.lane(5)==null,"lane five is unavailable");
-            System.out.println("[КФ 4 ДОРОЖКИ] ПРОЙДЕНО "+checks+" проверок: маяки, ковры 3x3, маршруты обеих команд.");
+            check(Files.isRegularFile(root.resolve("cf/compiled-routes-v3.bin")),
+                    "four-lane routes persisted beside the map");
+            // Regression: a cache HIT must still load the map chunks. A former
+            // implementation incorrectly returned ready() with zero loaded chunks.
+            InstanceContainer cachedWorld=MinecraftServer.getInstanceManager().createInstanceContainer();
+            cachedWorld.setGenerator(chunk->chunk.modifier().fillHeight(0,8,Block.STONE));
+            check(cachedWorld.getChunks().isEmpty(),"cold cache test starts without chunks");
+            var cachedRoutes=new CFThreeLanes(cachedWorld,root,new CFCarpetZones(),new CFPathBeacons());
+            var cacheTask=cachedRoutes.check(null);pump(cachedWorld,cacheTask);cacheTask.join();
+            check(cachedRoutes.ready() && cachedRoutes.laneCount()==4,
+                    "cold cache hit restored four routes");
+            check(cachedWorld.getChunks().stream().anyMatch(c->c.getChunkX()==0&&c.getChunkZ()==0),
+                    "cache hit loaded source region chunk before declaring routes ready");
+            System.out.println("[КФ 4 ДОРОЖКИ] ПРОЙДЕНО "+checks+
+                    " проверок: маяки, ковры 3x3, маршруты, холодный кеш и чанки.");
         }finally{MinecraftServer.stopCleanly();}
     }
 }

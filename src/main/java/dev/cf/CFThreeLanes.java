@@ -70,33 +70,38 @@ final class CFThreeLanes {
             try {
                 byte[] fingerprint=CFLaneCache.fingerprint(mapRoot);
                 var cached=CFLaneCache.read(mapRoot,fingerprint);
-                if(cached!=null) {
-                    world.scheduler().scheduleNextTick(()->{
-                        if(done.isDone())return;
-                        lanes=cached;laneCount=cached.size();
-                        status="ГОТОВО: "+laneCount+" дорожек загружены из кеша карты";
-                        done.complete(null);System.out.println(status());
-                        if(sender!=null)sender.sendMessage(status());
-                    });
-                    return;
-                }
+                // КРИТИЧНО: кеш хранит только маршруты, НЕ чанки мира!
+                // Даже при попадании в кеш необходимо загрузить ВСЕ чанки
+                // карты через CFReadOnlyMapLoader: он скрывает маяки и ковры
+                // в памяти и подготавливает реальные блоки для AI и башен.
+                // Запрещено делать done.complete() до полной загрузки мира.
                 cacheFingerprint=fingerprint;
                 List<Long> chunks=CFMapChunks.discover(mapRoot,world);
-                world.scheduler().scheduleNextTick(()->loadBatch(chunks,0,blue,red,done,sender));
+                world.scheduler().scheduleNextTick(()->loadBatch(chunks,0,blue,red,done,sender,cached));
             }catch(Exception e){fail(done,sender,e);}
         });
         if(sender!=null)sender.sendMessage("[КФ МАРШРУТЫ] Проверяю карту, маркеры и проходимость дорожек в обе стороны.");
         return done;
     }
-    private void loadBatch(List<Long> keys,int offset,Pos blue,Pos red,CompletableFuture<Void> done,CommandSender sender) {
+    private void loadBatch(List<Long> keys,int offset,Pos blue,Pos red,CompletableFuture<Void> done,
+                           CommandSender sender,Map<Integer,CFLanePath> cached) {
         if(done.isDone())return;
         try {
-            if(offset>=keys.size()){prepare(blue,red,done,sender);return;}
+            if(offset>=keys.size()){
+                if(cached!=null){
+                    // Только теперь, когда карта загружена, кеш безопасно использовать.
+                    lanes=cached;laneCount=cached.size();
+                    status="ГОТОВО: "+laneCount+" дорожек из кеша; чанки карты загружены";
+                    done.complete(null);System.out.println(status());
+                    if(sender!=null)sender.sendMessage(status());
+                }else prepare(blue,red,done,sender);
+                return;
+            }
             var loads=new ArrayList<CompletableFuture<?>>();int end=Math.min(offset+16,keys.size());
             for(int i=offset;i<end;i++){long k=keys.get(i);loads.add(world.loadChunk((int)(k>>32),(int)k));}
             CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new)).orTimeout(30,TimeUnit.SECONDS)
                     .whenComplete((v,e)->world.scheduler().scheduleNextTick(()->{
-                        if(e!=null)fail(done,sender,e);else loadBatch(keys,end,blue,red,done,sender);
+                        if(e!=null)fail(done,sender,e);else loadBatch(keys,end,blue,red,done,sender,cached);
                     }));
         }catch(Exception e){fail(done,sender,e);}
     }

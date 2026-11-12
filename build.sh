@@ -12,9 +12,41 @@ command -v mvn >/dev/null 2>&1 || { echo '[CF BUILD] Maven is required' >&2; exi
 [ -f "$REPO/pom.xml" ] && [ -d "$REPO/content/mobs" ] || {
   echo '[CF BUILD] Incomplete source tree; unpack ZIP in Git repository root' >&2; exit 1;
 }
+# Build into a staging directory inside dist (same filesystem for rename).
+# IMPORTANT: the finished CastleFight/ directory can be MOVED outside Git.
+# Never depend on the repository's path from the generated launcher.
 mkdir -p "$DIST/maps" "$DIST/data"
+BACKUP_CORE="$DIST/.core-previous"
+# If a build was killed after renaming core/ but before publishing its replacement,
+# restore the last good release BEFORE compiling anything else.
+if [ ! -d "$DIST/core" ] && [ -d "$BACKUP_CORE" ]; then
+  mv -- "$BACKUP_CORE" "$DIST/core"
+  echo '[CF BUILD] Восстановлено ядро после прерванной предыдущей сборки.'
+fi
 TMP="$(mktemp -d -p "$DIST" .cf-build.XXXXXXXX)"
-trap 'rm -rf -- "$TMP"' EXIT
+PUBLISHING=0
+PUBLISHED=0
+cleanup() {
+  code=$?
+  trap - EXIT INT TERM HUP
+  if [ "$PUBLISHING" -eq 1 ] && [ "$PUBLISHED" -eq 0 ] && [ -d "$BACKUP_CORE" ]; then
+    # If an error or interrupt occurred during publication, restore old core.
+    if [ -d "$DIST/core" ]; then
+      mv -- "$DIST/core" "$TMP/failed-core" || true
+    fi
+    if [ ! -d "$DIST/core" ]; then
+      mv -- "$BACKUP_CORE" "$DIST/core" || echo '[CF BUILD] ОШИБКА: восстанови core/ из .core-previous вручную!' >&2
+    fi
+  elif [ ! -d "$DIST/core" ] && [ -d "$BACKUP_CORE" ]; then
+    mv -- "$BACKUP_CORE" "$DIST/core" || true
+  fi
+  rm -rf -- "$TMP"
+  exit "$code"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 printf '\n[CF BUILD] Compiling with Maven...\n'
 (cd "$REPO" && mvn -B -DskipTests clean package)
@@ -26,10 +58,14 @@ if [ "${CF_SKIP_SMOKE:-0}" != 1 ]; then
   (
     cd "$TMP/tests"
     java -Xmx1G -cp "$JAR" dev.cf.CF271DamageSelfTest
-    for test in CFCastleSpawnsSelfTest CFNecromancySelfTest CF271DamageRuntimeSelfTest CF268FactionContentSelfTest CFAbilitiesSelfTest; do
+    for test in CFCastleSpawnsSelfTest CFNecromancySelfTest CF271DamageRuntimeSelfTest CF268FactionContentSelfTest CFAbilitiesSelfTest CF22SelfTest; do
       echo "[CF BUILD] Self-test: $test"
       java -Xmx1G -Dcf.target.meleeReviewTicks=20 -cp "$JAR" "dev.cf.$test" "$REPO/content"
     done
+    # CF Map 3.0: actual synthetic four-lane beacon/route integration smoke.
+    # Give it a fresh directory INSIDE the temporary test area every time.
+    echo '[CF BUILD] Self-test: CF23FourLaneRouteSmoke'
+    java -Xmx1G -cp "$JAR" dev.cf.CF23FourLaneRouteSmoke "$TMP/tests/four-lane-map"
   )
 fi
 
@@ -52,17 +88,28 @@ COMMIT="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo uncommitted)
 cp -- "$REPO/packaging/start.sh" "$TMP/start.sh"
 chmod +x "$TMP/start.sh"
 
-BACKUP_CORE="$TMP/previous-core"
-if [ -e "$DIST/core" ]; then mv -- "$DIST/core" "$BACKUP_CORE"; fi
-if ! mv -- "$TMP/core" "$DIST/core"; then
-  if [ -d "$BACKUP_CORE" ]; then mv -- "$BACKUP_CORE" "$DIST/core"; fi
-  echo '[CF BUILD] Failed to publish core; previous core restored' >&2
-  exit 1
+# Validate the launcher BEFORE publishing either file.
+bash -n "$TMP/start.sh"
+# Preserve a completed core if the previous invocation was interrupted late.
+# Existing map files and data/ are NEVER touched by this transaction.
+if [ -d "$DIST/core" ] && [ -d "$BACKUP_CORE" ]; then
+  rm -rf -- "$BACKUP_CORE"
 fi
-mv -f -- "$TMP/start.sh" "$DIST/start.sh"
+# The launcher is compatible with the previous core, so publish it first.
+# If a later step fails, the previous core remains recoverable.
 if [ ! -e "$DIST/maps/README.txt" ]; then
   cp -- "$REPO/packaging/MAPS_README.txt" "$DIST/maps/README.txt"
 fi
+mv -f -- "$TMP/start.sh" "$DIST/start.sh"
+PUBLISHING=1
+if [ -d "$DIST/core" ]; then mv -- "$DIST/core" "$BACKUP_CORE"; fi
+if ! mv -- "$TMP/core" "$DIST/core"; then
+  echo '[CF BUILD] Не удалось опубликовать ядро; восстановление предыдущей версии.' >&2
+  exit 1
+fi
+PUBLISHED=1
+# Do not remove the backup until the new core is fully published.
+rm -rf -- "$BACKUP_CORE"
 
 cat <<EOF
 
