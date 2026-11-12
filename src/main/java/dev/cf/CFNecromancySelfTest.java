@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Live Minestom regression. Death procs keep the victim's validated lane (1, 2, 3).
+ * Live Minestom regression. Death procs keep the victim's validated lane (1, 2, 3, 4).
  * Necromancy changes the team to the necromancer's team; resurrection retains the victim's team.
  */
 public final class CFNecromancySelfTest {
@@ -34,7 +34,7 @@ public final class CFNecromancySelfTest {
     /** Assign a REAL, immutable CFLanePath, not the legacy assignLane(width) helper. */
     private static CFUnit mob(InstanceContainer world,CFContentRegistry content,Set<CFUnit> units,
                               String team,int laneId,Pos pos) throws Exception {
-        check(laneId>=1 && laneId<=3,"test uses real lane IDs only");
+        check(laneId>=1 && laneId<=4,"test uses real lane IDs only");
         CFUnit u=new CFUnit(team,content.mob("grave_zombie"),pos,
                 pos.add("blue".equals(team)?12:-12,0,0));
         u.getAIGroups().clear();
@@ -135,9 +135,20 @@ public final class CFNecromancySelfTest {
                     "necromancy never summons an acolyte");
             check(abilities.counters().get("necromancies")==2,"two distinct towers each proc once");
             check(abilities.counters().get("revivals")==2,"red and blue resurrection both proc once");
+            // A fourth lane is a real lane, not an alias of lane 1.
+            abilities.addBuilding(873,"blue","necromancy",4);
+            Pos death4=new Pos(15.25,8,12.25);
+            CFUnit red4=mob(world,registry,units,"red",4,death4);
+            abilities.blessResurrection(red4,902,"red",5000);
+            before=results.size();
+            red4.kill();abilities.onDeath(red4);pump(world,2250);
+            check(results.size()==before+2,"fourth lane: exactly one zombie and one revival");
+            result(results,before,"blue",4,death4);
+            result(results,before,"red",4,death4);
+            check(abilities.counters().get("necromancies")==3,"three towers proc once each");
             System.out.println("[CF NECROMANCY + LANES] PASS "+checks+
                     " checks: lane 2 enemy -> blue zombie + red revival, lane 1 blue revival, "+
-                    "lane 3 enemy -> blue zombie, exact position, duplicate safety, cooldown, removal");
+                    "lane 3+4 enemy -> blue zombie, exact position, duplicate safety, cooldown, removal");
         } finally {
             MinecraftServer.stopCleanly();
         }

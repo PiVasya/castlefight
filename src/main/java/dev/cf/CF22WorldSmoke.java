@@ -39,14 +39,15 @@ public final class CF22WorldSmoke {
 
             var zones=new CFCarpetZones();
             var play=MinecraftServer.getInstanceManager().createInstanceContainer();
-            play.setChunkLoader(new CFReadOnlyMapLoader(arena,zones));
+            play.setChunkLoader(new CFReadOnlyMapLoader(arena,zones,new CFPathBeacons()));
             for(int x=-1;x<=1;x++)play.loadChunk(x,0).orTimeout(15,TimeUnit.SECONDS).join();
             check(play.getBlock(15,40,3).air(),"Runtime hides visible blue carpet");
             check(play.getBlock(-1,40,8).air(),"Runtime hides visible red carpet");
-            check(play.getBlock(4,40,14).air(),"Runtime hides road dots too");
-            check(zones.markAt(4,40,14).road() && zones.markAt(4,40,14).lane()==2,"red = lane 2 road, not build cell");
+            check(play.getBlock(4,40,14).air(),"Runtime hides ALL base carpets");
+            check("red".equals(zones.teamAt(4,40,14)) && zones.laneAt("red",4,40,14)==2,
+                    "red carpet belongs ONLY to the red construction zone of lane 2");
             check(zones.footprintLane("blue",15,40,3)==1,"cyan footprint binds lane 1");
-            check(!zones.covers("red",4,40,14),"road dots cannot place buildings");
+            check(!zones.covers("red",4,40,14),"one carpet cannot form a 3x3 footprint");
             check(zones.covers("blue",15,40,3),"3x3 blue mask crosses a chunk boundary");
             check(zones.covers("red",-1,40,8),"3x3 red mask handles negative coordinates");
             check(!zones.covers("red",15,40,3),"enemy color cannot build on blue mask");

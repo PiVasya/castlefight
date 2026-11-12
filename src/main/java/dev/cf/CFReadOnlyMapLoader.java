@@ -10,22 +10,26 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Loads a prepared external Anvil map, masking its carpet markers in memory.
- * Never writes changes to the source map. Match towers are temporary.
+/** Loads a prepared external Anvil map, masking carpet zones AND on-road beacons
+ * in memory. Never writes changes to the source map. Match towers are temporary.
  */
 final class CFReadOnlyMapLoader implements ChunkLoader {
     private final AnvilLoader delegate;
     private final CFCarpetZones carpets;
+    private final CFPathBeacons beacons;
     private final AtomicBoolean warned = new AtomicBoolean();
 
-    CFReadOnlyMapLoader(Path mapRoot, CFCarpetZones carpets) {
+    CFReadOnlyMapLoader(Path mapRoot, CFCarpetZones carpets, CFPathBeacons beacons) {
         this.delegate = new AnvilLoader(mapRoot, Key.key("minecraft:overworld"));
         this.carpets = carpets;
+        this.beacons = java.util.Objects.requireNonNull(beacons,"Путевые маяки обязательны в CF Map 3.0");
     }
 
     @Override public void loadInstance(Instance instance) { delegate.loadInstance(instance); }
     @Override public Chunk loadChunk(Instance instance, int x, int z) {
         Chunk chunk = delegate.loadChunk(instance, x, z);
+        // Маркеры стоят НА дороге. Скрываем их ТОЛЬКО в памяти чанка.
+        beacons.preparePlayChunk(chunk);
         carpets.preparePlayChunk(chunk);
         return chunk;
     }
@@ -38,6 +42,6 @@ final class CFReadOnlyMapLoader implements ChunkLoader {
 
     private void rejectWrite() {
         if (warned.compareAndSet(false, true))
-            System.err.println("[CF MAP] Ignored a request to write to the read-only map.");
+            System.err.println("[КФ КАРТА] Запрещена запись в карту: мир доступен только для чтения.");
     }
 }

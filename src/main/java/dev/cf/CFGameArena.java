@@ -16,8 +16,8 @@ final class CFGameArena {
 
     CFGameArena(InstanceContainer world, Set<CFUnit> units,
                 BooleanSupplier duel, BooleanSupplier healthBars,
-                Path mapRoot, CFCarpetZones carpets) {
-        routes = new CFThreeLanes(world, mapRoot, carpets);
+                Path mapRoot, CFCarpetZones carpets, CFPathBeacons beacons) {
+        routes = new CFThreeLanes(world, mapRoot, carpets, beacons);
         towers = new CFTowerSystem(world, units, duel, healthBars, carpets, routes);
     }
 

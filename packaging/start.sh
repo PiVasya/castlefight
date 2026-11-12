@@ -25,15 +25,15 @@ if [ -z "$MAP_ID" ]; then
 fi
 [[ "$MAP_ID" =~ ^[A-Za-z0-9_-]+$ ]] || { echo '[CF] Invalid map ID' >&2; exit 2; }
 MAP="$ROOT/maps/$MAP_ID"
-LANES="$MAP/cf/lanes-v2.properties"
+MAP_CONFIG="$MAP/cf/map.properties"
 REGIONS="$MAP/dimensions/minecraft/overworld/region"
-[ -d "$REGIONS" ] || { echo "[CF] Missing world regions: $REGIONS" >&2; exit 1; }
+[ -d "$REGIONS" ] || { echo "[КФ] Отсутствует папка регионов мира: $REGIONS" >&2; exit 1; }
 find "$REGIONS" -maxdepth 1 -type f -name 'r.*.*.mca' -print -quit | grep -q . || {
-  echo '[CF] No Anvil .mca region files in selected map' >&2; exit 1;
+  echo '[КФ] У выбранной карты нет файлов регионов .mca' >&2; exit 1;
 }
-[ -f "$LANES" ] || {
-  echo "[CF] Missing map metadata: $LANES" >&2
-  echo '[CF] Copy existing <map-id>-lanes-v2.properties to map/cf/lanes-v2.properties' >&2
+[ -f "$MAP_CONFIG" ] || {
+  echo "[КФ] Отсутствует файл карты: $MAP_CONFIG" >&2
+  echo '[КФ] Старые карты не поддерживаются. Создай файл cf/map.properties с schema=3.0.' >&2
   exit 1
 }
 
@@ -44,11 +44,14 @@ prop() {
       v=substr($0,index($0,"=")+1);
       sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v);
       print v; exit
-    }' "$LANES"
+    }' "$MAP_CONFIG"
 }
-[ "$(prop schema)" = '2.2' ] || { echo '[CF] Expected schema=2.2 in map metadata' >&2; exit 1; }
+case "$(prop schema)" in
+  3.0) ;;
+  *) echo '[КФ] Поддерживается ТОЛЬКО schema=3.0. Старые карты запускать запрещено.' >&2; exit 1 ;;
+esac
 for k in blue.x blue.y blue.z red.x red.y red.z; do
-  [ -n "$(prop "$k")" ] || { echo "[CF] Map config missing $k" >&2; exit 1; }
+  [ -n "$(prop "$k")" ] || { echo "[КФ] В настройках карты отсутствует $k" >&2; exit 1; }
 done
 
 SX="$(prop spawn.x)"; SY="$(prop spawn.y)"; SZ="$(prop spawn.z)"
@@ -58,7 +61,7 @@ if [ -z "$SX$SY$SZ" ]; then
   SY="$(awk -v a="$(prop blue.y)" -v b="$(prop red.y)" 'BEGIN{printf "%.3f",(a+b)/2+2}')"
   SZ="$(awk -v a="$(prop blue.z)" -v b="$(prop red.z)" 'BEGIN{printf "%.3f",(a+b)/2}')"
 elif [ -z "$SX" ] || [ -z "$SY" ] || [ -z "$SZ" ]; then
-  echo '[CF] Specify all of spawn.x, spawn.y and spawn.z, or none' >&2
+  echo '[КФ] Точка spawn должна иметь все три координаты либо ни одной' >&2
   exit 1
 fi
 
@@ -79,8 +82,8 @@ if [ -f "$ROOT/data/ops.txt" ] && [ ! -e "$RUN/ops.txt" ]; then
   ln -s ../../ops.txt "$RUN/ops.txt"
 fi
 
-printf '[CF] Map: %s\n[CF] Spawn: %s %s %s\n' "$MAP_ID" "$SX" "$SY" "$SZ"
-echo '[CF] Game-only runtime; the selected map is read-only.'
+printf '[КФ] Карта: %s\n[КФ] Точка появления: %s %s %s\n' "$MAP_ID" "$SX" "$SY" "$SZ"
+echo '[КФ] Игровой сервер. Исходная карта открыта только для чтения.'
 cd "$RUN"
 exec java -Xms512M -Xmx"${CF_MAX_RAM:-2G}" \
   -Dcf.map.path="$MAP" -Dcf.map.id="$MAP_ID" \

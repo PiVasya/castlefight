@@ -132,7 +132,7 @@ final class CFSoakTest {
         if(rounds<1 || rounds>512 || seconds<20 || seconds>900)
             return "[CF SOAK] Allowed: 1..512 rounds and 20..900 seconds/round. Default: 128 x 120s.";
         if(!lanes.ready() || lanes.castle("blue")==null || lanes.castle("red")==null)
-            return "[CF SOAK] Both castles and all 3 validated lanes are required.";
+            return "[КФ SOAK] Нужны два замка и проверенные дорожки.";
         if(content.mobs().isEmpty())return "[CF SOAK] No content mobs loaded.";
         try {
             Run r=new Run(rounds,seconds,lanes.status(),content.mobs().size(),mode);
@@ -163,7 +163,7 @@ final class CFSoakTest {
             // Warm the route ends: no assumption that player presence guarantees the same chunks.
             Set<Long> chunks=new HashSet<>();
             List<java.util.concurrent.CompletableFuture<?>> loads=new ArrayList<>();
-            for(int id=1;id<=3;id++)for(String team:List.of("red","blue")) {
+            for(int id=1;id<=lanes.laneCount();id++)for(String team:List.of("red","blue")) {
                 CFLanePath lane=lanes.lane(id);
                 if(lane==null)continue;
                 List<Pos> path=lane.forTeam(team);
@@ -186,7 +186,7 @@ final class CFSoakTest {
                         r.event("SOAK_CHUNK_LOAD_OK","chunks",chunks.size());
                         beginRound(r);
                     }));
-            return "[CF SOAK] Started "+rounds+" x "+seconds+"s from both castles / lanes 1-3. " +
+            return "[CF SOAK] Started "+rounds+" x "+seconds+"с от обоих замков, дорожек: "+lanes.laneCount()+". " +
                     "RUN="+r.dir+". /cf soak status /cf soak stop. At finish: scripts/pack-soak.sh";
         }catch(Exception e){
             Run r=last;
@@ -254,20 +254,20 @@ final class CFSoakTest {
                     abilities.addVirtualBuilding(team,ability);
             r.event("ROUND_BEGIN","round",r.round,"seed",scenarioSeed,
                     "map",System.getProperty("cf.map.path","<unconfigured>"),
-                    "testAltars",6,"laneCount",3,
+                    "testAltars",6,"laneCount",lanes.laneCount(),
                     "profile",r.roundProfile,"stressTarget",r.stressTarget,
                     "virtualCastleHp",r.blueCastleHp,"seedControlsAbilityRng",false);
             if(r.stressTarget>=100)
                 r.event("LOG_SAMPLING_POLICY","kinds","PUSH_CONTACT,PUSH_APPLY,CROWD_DETOUR",
                         "ratio",20,"combatEventsSampled",false,"snapshotsSampled",false);
-            // Every round includes every mob type on each team. Rotate across lane 1-3 between
+            // Every round includes every mob type on each team. Rotate across active lanes between
             // rounds; extra units vary per round, producing collisions, poisons and area fights.
             List<CFContentRegistry.Mob> mobTypes=new ArrayList<>(content.mobs());
             mobTypes.sort(Comparator.comparing(CFContentRegistry.Mob::id));
             int index=0,success=0,attempted=0;
             for(CFContentRegistry.Mob mob:mobTypes) {
-                int laneId=(index+r.round-1)%3+1;
-                int ordinal=index/3;
+                int laneId=(index+r.round-1)%lanes.laneCount()+1;
+                int ordinal=index/lanes.laneCount();
                 for(String team:List.of("blue","red")) {
                     attempted++;
                     if(spawnNearCastle(team,mob.id(),laneId,ordinal,r.round,scenario))success++;
@@ -276,11 +276,11 @@ final class CFSoakTest {
             }
             int extras=Math.min(6,Math.max(3,mobTypes.size()/2));
             for(int k=0;k<extras;k++){
-                int laneId=(k+r.round)%3+1;
+                int laneId=(k+r.round)%lanes.laneCount()+1;
                 CFContentRegistry.Mob mob=mobTypes.get(scenario.nextInt(mobTypes.size()));
                 for(String team:List.of("blue","red")) {
                     attempted++;
-                    if(spawnNearCastle(team,mob.id(),laneId,4+k/3,r.round,scenario))success++;
+                    if(spawnNearCastle(team,mob.id(),laneId,4+k/lanes.laneCount(),r.round,scenario))success++;
                 }
             }
             r.roundRequested=attempted;
@@ -291,9 +291,9 @@ final class CFSoakTest {
             r.peakAlive=Math.max(r.peakAlive,units.size());
             r.event("ROUND_WAVES_ISSUED","attempted",attempted,"accepted",success,
                     "rejected",attempted-success,"allTypes",mobTypes.size(),
-                    "bothCastles",true,"lanes","1,2,3","stressTarget",r.stressTarget);
+                    "bothCastles",true,"lanes",lanes.laneCount(),"stressTarget",r.stressTarget);
             System.out.println("[CF SOAK] ROUND "+r.round+"/"+r.rounds+
-                    " accepted="+success+"/"+attempted+" across lanes 1-3; seed="+scenarioSeed);
+                    " принято="+success+"/"+attempted+"; дорожек="+lanes.laneCount()+"; seed="+scenarioSeed);
             if(success==0){r.event("SOAK_FATAL","reason","all-initial-spawns-failed");finish(r,"all-spawns-failed");}
         } catch(Exception e) {
             r.event("SOAK_FATAL","stage","beginRound","error",e.toString());
@@ -320,14 +320,14 @@ final class CFSoakTest {
                 for(String ability:List.of("mutation","toxic","resurrection"))abilities.addVirtualBuilding(team,ability);
             int n=0;
             for(var mob:content.mobs()) {
-                int lane=n%3+1;
+                int lane=n%lanes.laneCount()+1;
                 for(String team:List.of("blue","red"))for(int copy=0;copy<2;copy++){
-                    requested++;if(verifySpawn(team,mob.id(),lane,n/3+copy*3))accepted++;
+                    requested++;if(verifySpawn(team,mob.id(),lane,n/lanes.laneCount()+copy*lanes.laneCount()))accepted++;
                 }
                 n++;
             }
         } else {
-            int lane=k%3+1;
+            int lane=k%lanes.laneCount()+1;
             for(int j=0;j<sizes[k];j++) {
                 String blue=k==4 && j%2==1?"risen_arsonist":left[k];
                 requested+=2;
@@ -380,7 +380,7 @@ final class CFSoakTest {
         int budget="BURN_10_PROFILES".equals(r.mode) ? 32 : 8;
         while(budget-->0 && units.size()<r.stressTarget && r.stressIssued<issuedLimit) {
             int index=r.stressIssued++;
-            int laneId=(index+r.round)%3+1;
+            int laneId=(index+r.round)%lanes.laneCount()+1;
             String team=(index%2==0)?"blue":"red";
             int kindIndex=Math.floorMod(index/2 + r.round*7,types.size());
             CFContentRegistry.Mob mob=types.get(kindIndex);
@@ -546,19 +546,19 @@ final class CFSoakTest {
                 {"hell_skeleton","acolyte"}
         };
         int success=0;
-        for(int i=0;i<3;i++){
+        for(int i=0;i<lanes.laneCount();i++){
             CFLanePath lane=lanes.lane(i+1);
             if(lane==null)continue;
-            String blue=(r.round%2==0?pairings[i][0]:pairings[i][1]);
-            String red=(r.round%2==0?pairings[i][1]:pairings[i][0]);
+            String blue=(r.round%2==0?pairings[i%pairings.length][0]:pairings[i%pairings.length][1]);
+            String red=(r.round%2==0?pairings[i%pairings.length][1]:pairings[i%pairings.length][0]);
             if(content.mob(blue)!=null && spawn.at("blue",blue,i+1,
                     lane.blue.get(Math.max(1,lane.blue.size()/2-3))))success++;
             if(content.mob(red)!=null && spawn.at("red",red,i+1,
                     lane.red.get(Math.max(1,lane.red.size()/2-3))))success++;
         }
-        r.roundRequested+=6;
+        r.roundRequested+=2*lanes.laneCount();
         r.roundAccepted+=success;
-        r.event("SOAK_CONTACT_WAVE","round",r.round,"accepted",success,"attempted",6,
+        r.event("SOAK_CONTACT_WAVE","round",r.round,"accepted",success,"attempted",2*lanes.laneCount(),
                 "reason","guarantee live combat opportunities after castle march");
     }
 

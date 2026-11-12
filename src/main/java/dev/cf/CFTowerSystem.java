@@ -92,7 +92,7 @@ final class CFTowerSystem {
     CFArenaAbilities abilities() { return abilities; }
     String consoleSoakStart(int rounds,int seconds) {
         if(duel.getAsBoolean()||!routes.ready())
-            return "[CF SOAK] Requires all three valid routes and no active duel.";
+            return "[КФ SOAK] Нужны проверенные маршруты и отсутствие активной дуэли.";
         return soak.start(rounds,seconds);
     }
     String consoleSoakNight(int rounds,int seconds) {
@@ -242,7 +242,7 @@ final class CFTowerSystem {
             int laneId=c.get(testLane);
             if(content.mob(mobId)==null){s.sendMessage("[CF TEST] Unknown mob: "+mobId);return;}
             CFLanePath lane=routes.lane(laneId);
-            if(lane==null){s.sendMessage("[CF TEST] Use lane 1, 2 or 3.");return;}
+            if(lane==null){s.sendMessage("[КФ ТЕСТ] Выбери дорожку от 1 до "+routes.laneCount()+".");return;}
             List<Pos> points=lane.forTeam(teamId);
             Pos near=points.get(Math.max(1,Math.min(points.size()-2,points.size()/2+(teamId.equals("blue")?-12:12))));
             s.sendMessage(spawnAbilityUnit(teamId,mobId,laneId,near)
@@ -439,6 +439,12 @@ final class CFTowerSystem {
                 "[CF СТРОЙКА] Вторая и третья ступени доступны только через улучшение построенной башни.");
         if(towers.size()>=content.limits().towers())return rejectBuild(actor,team,id,x,y,z,"TOWER_LIMIT",
                 "[CF СТРОЙКА] Достигнут лимит башен.","towerCount",towers.size(),"limit",content.limits().towers());
+        // НЕ МЕНЯТЬ: путь башни намеренно задаётся ЦВЕТОМ СТРОИТЕЛЬНЫХ
+        // КОВРОВ 3x3, причём у каждой команды СВОЙ цвет ДЛЯ КАЖДОГО laneId.
+        // Запрещено определять laneId по ближайшему маршруту. В единственном формате CF Map 3.0
+        // ВСЕ ковры принадлежат только строительным зонам, а путевые маяки
+        // стоят прямо НА дороге (LODESTONE + STAINED_GLASS). Ни один ковёр
+        // не является путевой точкой! См. CFMarkerPalette и MAP_CONTRACT.md.
         int laneId=carpets.footprintLane(team,x,y,z);
         if(laneId==0)return rejectBuild(actor,team,id,x,y,z,"FOOTPRINT_LANE",
                 "[CF СТРОЙКА] Нужны все 9 клеток одного цвета одной линии для команды "+team+" на одной высоте. Не смешивай цвета линий; ПКМ по ЦЕНТРУ.");
@@ -623,7 +629,7 @@ final class CFTowerSystem {
             sender.sendMessage("[CF TEST] Soak running; /cf soak status or /cf soak stop.");return false;
         }
         if(duel.getAsBoolean() || !routes.ready()) {
-            sender.sendMessage("[CF TEST] Three validated routes and no active duel required.");return false;
+            sender.sendMessage("[КФ ТЕСТ] Нужны проверенные маршруты и отсутствие активной дуэли.");return false;
         }
         if(sender instanceof Player p && p.getInstance()!=world){
             sender.sendMessage("[CF TEST] Enter this map first.");return false;
@@ -639,12 +645,12 @@ final class CFTowerSystem {
         }
         int spawned=0;int index=0;
         for(CFContentRegistry.Mob mob:content.mobs()) {
-            int laneId=index%3+1;
+            int laneId=index%routes.laneCount()+1;
             CFLanePath lane=routes.lane(laneId);
             if(lane==null)continue;
             List<Pos> bluePath=lane.forTeam("blue");
             int center=bluePath.size()/2;
-            int spacing=8+(index/3)*4;
+            int spacing=8+(index/routes.laneCount())*4;
             int blueIndex=Math.max(1,center-spacing);
             int redIndex=Math.min(bluePath.size()-2,center+spacing);
             if(spawnAbilityUnit("blue",mob.id(),laneId,bluePath.get(blueIndex)))spawned++;
@@ -652,7 +658,7 @@ final class CFTowerSystem {
             index++;
         }
         return "[CF TEST] "+spawned+" mobs requested from "+content.mobs().size()+
-                " types on 3 lanes. "+(support?"6 virtual support buildings ON. ":"")+"/cf test status";
+                " типов на "+routes.laneCount()+" дорожках. "+(support?"6 virtual support buildings ON. ":"")+"/cf test status";
     }
     /** Used by mutations, revivals, periodic summons and OP test spawns. Never changes the saved map. */
     boolean spawnAbilityUnit(String team,String mobId,int laneId,Pos near) {
@@ -775,7 +781,8 @@ final class CFTowerSystem {
 
     void start() {
         routes.check(null).whenComplete((v,e)->System.out.println(e==null?
-                "[CF СТРОЙКА] Three routes validated; towers enabled.":"[CF СТРОЙКА] Towers DISABLED: check map carpets and castle positions."));
+                "[КФ БАШНИ] Проверено дорожек: "+routes.laneCount()+"; строительство разрешено.":
+                "[КФ БАШНИ] Строительство недоступно: проверь маркеры путей, ковры 3x3 и замки."));
         world.scheduler().buildTask(this::tick).delay(TaskSchedule.tick(1)).repeat(TaskSchedule.tick(1)).schedule();
     }
     private synchronized void tick() {

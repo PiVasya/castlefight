@@ -1,82 +1,112 @@
-# Castle Fight - game core only
+# Castle Fight — чистое игровое ядро
 
-This Git project contains the Castle Fight 2.6.8.3 + Necromancy V3 server engine,
-its combat content and its test suite. **Map editing tools are not part of the
-server**. Prepare maps separately in Minecraft and copy them into the release.
-There is no world-editing mode, no WorldEdit, no map-autosave, and no command for
-changing the castle positions while a match is running.
+**Только игровая логика. Никакого WorldEdit, BUILD, старых карт, дорожных ковров или миграционных скриптов.**
 
-## Build
+## Сборка
 
-Requires JDK 25 and Maven. From the repository root:
+Нужны JDK 25 и Maven. В корне своего Git-репозитория:
 
 ```bash
 bash build.sh
 ```
 
-The build compiles Java, runs selected regression tests, and publishes
-`dist/CastleFight/`:
+После сборки:
 
 ```text
 dist/CastleFight/
-  start.sh
-  core/
-    server.jar
-    content/mobs/
-    content/towers/
-    content/settings.properties
-    CF_BUILD_INFO.txt
-  maps/
-    <map-id>/...
-  data/
+├── start.sh
+├── core/server.jar
+├── core/content/
+├── maps/
+└── data/
 ```
 
-`build.sh` **never deletes or edits source files**. It updates only the generated
-`core/` and `start.sh`. Existing `maps/` and `data/` remain in place. This
-archive has no `.git`, worlds, player records, logs, prebuilt JAR or secrets.
+`build.sh` компилирует, запускает регрессионные тесты и публикует сервер.
+**Исходники не удаляет и не редактирует; карты и данные сохраняет.**
 
-## Maps
+## Единственный формат карт: CF Map 3.0
 
-Put a ready Minecraft world in `dist/CastleFight/maps/<map-id>/`:
+В папке каждой карты требуется файл **`cf/map.properties`** с `schema=3.0`.
+Схемы `2.2`, `2.3`, `lanes-v2.properties` и прежние ковровые маршруты
+**не поддерживаются**. Старые карты не конвертируются и не запускаются.
+
+Карта размещается отдельно:
 
 ```text
-<map-id>/
-  dimensions/minecraft/overworld/region/r.0.0.mca
-  cf/lanes-v2.properties
+maps/<map-id>/
+├── dimensions/minecraft/overworld/region/r.0.0.mca
+└── cf/
+    ├── map.properties
+    └── compiled-routes-v3.bin  # создаётся при первой успешной проверке
 ```
 
-The map properties contain castle positions, optional spawn position and schema
-`2.2`. See `docs/MAP_CONTRACT.md` and the release `maps/README.txt`.
-The game core calculates all three paths from saved carpet markers at startup.
-It hides those markers in memory. **Map files are always read-only to the game**.
-
-## Run
-
-For a single map: `bash dist/CastleFight/start.sh`.
-With multiple maps: `bash dist/CastleFight/start.sh my-arena`.
-To list maps: `bash dist/CastleFight/start.sh --list`.
-
-Match tower construction, upgrades, races, necromancy, revivals, AI and combat
-remain intact. Operator diagnostics and battle stress tests are retained. The
-server does not register editor commands or creative-mode switching commands.
-Runtime logs are written under `dist/CastleFight/data/runs/<map-id>/`.
-
-## Repository updates
-
-This is a full **clean source tree**, not an installer. Unzipping onto an old
-checkout does not remove older files from that checkout. Delete the obsolete
-files from the old checkout **once, outside `build.sh`**, when upgrading:
+### Маршрутные маяки — строго НА дороге
 
 ```text
-src/main/java/dev/cf/CFWorldEdit.java
-src/main/java/dev/cf/CFWorldMode.java
-src/main/java/dev/cf/CFSingleLaneTool.java
-src/main/java/dev/cf/CF23SelfTest.java
-src/main/java/dev/cf/CF234JournalSelfTest.java
-src/main/resources/cf/arena-spawn-cells.csv    (if present in an older checkout)
+[цветное стекло]  <- 1 коричневое; 2 красное; 3 оранжевое; 4 жёлтое
+[магнетит]        <- стоит непосредственно НА дороге
+[поверхность дороги]
 ```
 
-The new game-only replacements are `CFGameArena.java` and
-`CFReadOnlyMapLoader.java`. Do not put `dist/` or `target/` in Git.
+Маяки оставляют свободное место над собой. Два служебных блока скрываются
+только в **памяти Minestom** во время игры. Сам мир на диске остаётся нетронутым.
+Минимум два маяка для каждого пути. 1–4 дорожки, без пропусков в нумерации.
 
-The complete Maven/Minestom build is intended to run on Fedora with Java 25.
+### Ковры — только строительство баз
+
+| Лайн | Синие ковры | Красные ковры |
+|---:|---|---|
+| 1 | CYAN / WHITE | PURPLE / BROWN |
+| 2 | LIGHT_BLUE / LIGHT_GRAY | MAGENTA / RED |
+| 3 | BLUE / GRAY | PINK / ORANGE |
+| 4 | GREEN / BLACK | LIME / YELLOW |
+
+Для каждой площадки башни 3×3 нужны **9 ковров одного цвета**. Альтернативные
+цвета той же команды/дорожки в пределах одной площадки смешивать нельзя.
+Дорожка определяется цветом, а не расстоянием до пути.
+
+### Замки
+
+В этой версии координаты обоих замков ещё задаются в `cf/map.properties`.
+Маркер замка 3×3 из глазурованной керамики согласован как следующий
+отдельный этап, **пока не реализован**; не будем выдавать его за работающую функцию.
+
+Пример `cf/map.properties`:
+
+```properties
+schema=3.0
+blue.x=-60.5
+blue.y=8.0
+blue.z=12.5
+red.x=69.5
+red.y=8.0
+red.z=12.5
+dot.max-gap=12
+# spawn.x=4.5
+# spawn.y=12
+# spawn.z=12.5
+```
+
+Координаты в примере вымышленные — укажи реальные позиции на своей карте.
+
+## Запуск
+
+```bash
+bash dist/CastleFight/start.sh <map-id>
+```
+
+Если карта одна, можно запустить `start.sh` без имени.
+
+## Проверки карты и компилятора
+
+```bash
+java -cp target/cfengine-0.1.0.jar dev.cf.CF22SelfTest
+mkdir -p /tmp/cf-map-qa && cd /tmp/cf-map-qa
+java -cp "$OLDPWD/target/cfengine-0.1.0.jar" dev.cf.CF23FourLaneRouteSmoke new-map-smoke
+```
+
+Вторая команда проверяет четыре дорожки на временной синтетической карте.
+Это не заменяет полноценную проверку настоящего игрового мира.
+
+Более подробный контракт — `docs/MAP_CONTRACT.md`.
+Большой запрещающий комментарий — в `CFMarkerPalette.java`.

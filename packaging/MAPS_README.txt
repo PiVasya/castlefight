@@ -1,30 +1,39 @@
-Place each prepared world in maps/<map-id>/.
+CASTLE FIGHT — КАРТА НОВОГО ФОРМАТА 3.0
 
-Expected files:
-  maps/<map-id>/dimensions/minecraft/overworld/region/r.0.0.mca
-  maps/<map-id>/cf/lanes-v2.properties
+Поддерживается ТОЛЬКО CF Map 3.0. Старые карты/схемы не читаются.
 
-The world is external to the compiled game code. No .mca files ship in core/.
+Положи подготовленный Minecraft-мир сюда:
+  maps/<map-id>/dimensions/minecraft/overworld/region/r.x.z.mca
+  maps/<map-id>/cf/map.properties
 
-Required cf/lanes-v2.properties keys:
-  schema=2.2
-  dot.max-gap=12.0
-  blue.x=<your-blue-castle-x>
-  blue.y=<your-blue-castle-y>
-  blue.z=<your-blue-castle-z>
-  red.x=<your-red-castle-x>
-  red.y=<your-red-castle-y>
-  red.z=<your-red-castle-z>
-Optional lobby point (all 3 keys):
-  spawn.x=<your-lobby-x>
-  spawn.y=<your-lobby-y>
-  spawn.z=<your-lobby-z>
+Минимальный файл cf/map.properties:
+  schema=3.0
+  blue.x=-60.5   # подставь свои координаты
+  blue.y=8
+  blue.z=12.5
+  red.x=69.5
+  red.y=8
+  red.z=12.5
 
-Use actual coordinates from your selected map; placeholders are not valid properties.
-Road carpets are BROWN/RED/ORANGE for lanes 1/2/3.
-Blue build masks: CYAN/LIGHT_BLUE/BLUE.
-Red build masks: PURPLE/MAGENTA/PINK.
-The core validates 3 lanes in both directions at runtime.
+МАЯКИ ПУТЕЙ — ТОЛЬКО НА ДОРОГЕ:
+  [цветное стекло] <- лайн 1 BROWN; 2 RED; 3 ORANGE; 4 YELLOW
+  [магнетит]       <- стоит НА дороге
+  [пол дороги]
 
-Run ./start.sh when exactly one map exists, or ./start.sh <map-id>.
-Do not copy a live Minecraft world while it is being saved.
+Минимум два маяка на каждый путь. Путей от 1 до 4, без пропусков.
+В игровом мире маяки скрываются в памяти. Исходные .mca не изменяются.
+
+ВСЕ 16 КОВРОВ — ТОЛЬКО ДЛЯ СТРОИТЕЛЬСТВА:
+  лайн 1: синие CYAN/WHITE; красные PURPLE/BROWN
+  лайн 2: синие LIGHT_BLUE/LIGHT_GRAY; красные MAGENTA/RED
+  лайн 3: синие BLUE/GRAY; красные PINK/ORANGE
+  лайн 4: синие GREEN/BLACK; красные LIME/YELLOW
+
+Под башню нужны 9 ковров ОДНОГО цвета в квадрате 3x3.
+Другие цвета, даже той же команды и лайна, смешивать нельзя.
+
+Успешно проверенные маршруты автоматически сохраняются РЯДОМ с миром:
+  cf/compiled-routes-v3.bin
+Это не часть сборки, build.sh не изменяет карты и исходники.
+
+Подробное описание — docs/MAP_CONTRACT.md в Git-проекте.

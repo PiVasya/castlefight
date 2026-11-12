@@ -79,10 +79,12 @@ public final class Main {
         if (!Files.isDirectory(mapPath.resolve("dimensions/minecraft/overworld/region"))) {
             throw new IllegalStateException("Castle map not found: " + mapPath.toAbsolutePath());
         }
+        CFMapFormat.read(mapPath); // Отказ от запуска карты без schema=3.0.
         CFCarpetZones carpets = new CFCarpetZones();
+        CFPathBeacons beacons = new CFPathBeacons();
         world = MinecraftServer.getInstanceManager().createInstanceContainer();
         world.setChunkSupplier(LightingChunk::new);
-        world.setChunkLoader(new CFReadOnlyMapLoader(mapPath, carpets));
+        world.setChunkLoader(new CFReadOnlyMapLoader(mapPath, carpets, beacons));
         world.setTime(6000);
         try { combatContent=new CFContentRegistry(Path.of("content")); }
         catch (IOException e) { throw new IllegalStateException("Invalid combat content",e); }
@@ -99,7 +101,7 @@ public final class Main {
         });
         loadData();
         laneTool = new CFGameArena(world, units, () -> activeSuite() != null,
-                () -> healthBarsEnabled, mapPath, carpets);
+                () -> healthBarsEnabled, mapPath, carpets, beacons);
         MinecraftServer.getGlobalEventHandler().addListener(ServerTickMonitorEvent.class,
                 event -> CFNightControl.poll(laneTool));
         // Map-scoped castle markers are authoritative; do not inherit another map's defaults.
@@ -366,7 +368,7 @@ public final class Main {
 
     private boolean hasBothCastles(net.minestom.server.command.CommandSender sender) {
         if (red != null && blue != null) return true;
-        sender.sendMessage("[CF] Missing castle positions in the selected map cf/lanes-v2.properties");
+        sender.sendMessage("[CF] Укажи координаты двух замков в карте cf/map.properties");
         return false;
     }
 

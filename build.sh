@@ -74,6 +74,6 @@ Release: $DIST
   $DIST/maps/       (preserved across builds)
   $DIST/data/       (preserved across builds)
 
-Add a prepared world under maps/<map-id>/ and its cf/lanes-v2.properties.
+Add a CF Map 3.0 world under maps/<map-id>/ with cf/map.properties.
 Then run: bash '$DIST/start.sh'
 EOF

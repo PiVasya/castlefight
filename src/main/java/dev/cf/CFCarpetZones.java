@@ -5,9 +5,15 @@ import net.minestom.server.instance.block.Block;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Disk carpets define navigation and build zones; runtime hides them only in memory. */
+/**
+ * ВСЕ 16 ЦВЕТОВ КОВРОВ = ТОЛЬКО ЗОНЫ СТРОИТЕЛЬСТВА, НЕ МАРШРУТ.
+ * Команда и дорожка определяются ТОЛЬКО цветом ковра; вся площадка 3x3
+ * должна иметь девять ковров ТОЧНО ОДНОГО ЦВЕТА. Старой схемы не существует.
+ * См. обязательный комментарий автора в CFMarkerPalette.
+ */
 final class CFCarpetZones {
     private final Map<Long,Map<CFPlacementRules.Cell,CFMarkerPalette.Mark>> playChunks=new ConcurrentHashMap<>();
+    CFCarpetZones() { }
     static long key(int x,int z){return ((long)x<<32)^(z&0xffffffffL);}
     void preparePlayChunk(Chunk chunk) {
         if(chunk==null)return;
@@ -39,14 +45,23 @@ final class CFCarpetZones {
     }
     String teamAt(int x,int y,int z) {var m=markAt(x,y,z);return m==null?null:m.team();}
     int laneAt(String team,int x,int y,int z) {var m=markAt(x,y,z);return m==null||!team.equals(m.team())?0:m.lane();}
+    // АРХИТЕКТУРНОЕ ТРЕБОВАНИЕ: возвращаем laneId ТОЛЬКО из цвета всех 9
+    // ковров ОДНОЙ команды и ОДНОЙ дорожки. Никаких «ближайших путей»!
+    // Это правило обязательно и для 4+ дорожек. Подробнее: CFMarkerPalette.
     int footprintLane(String team,int x,int y,int z) {
-        int lane=laneAt(team,x,y,z);if(lane==0)return 0;
-        for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)if(laneAt(team,x+dx,y,z+dz)!=lane)return 0;
-        return lane;
+        CFMarkerPalette.Mark center=markAt(x,y,z);
+        if(center==null||!team.equals(center.team()))return 0;
+        // НЕЛЬЗЯ смешивать два цвета, даже если у них ОДНИ team и laneId.
+        // Все девять ковров должны иметь точно один block state ID.
+        for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++) {
+            CFMarkerPalette.Mark cell=markAt(x+dx,y,z+dz);
+            if(cell==null||cell.block().stateId()!=center.block().stateId())return 0;
+        }
+        return center.lane();
     }
     boolean covers(String team,int x,int y,int z){return footprintLane(team,x,y,z)>0;}
     String summary(Instance world){
         var counts=new TreeMap<String,Integer>();snapshot(world).values().forEach(m->counts.merge(m.role(),1,Integer::sum));
-        return "[CF CARPETS] Hidden markers (loaded chunks): "+counts+"; 9 cells of ONE lane/team at ONE Y required.";
+        return "[КФ КОВРЫ] Скрытые маркеры в загруженных чанках: "+counts+"; для башни нужны 9 ковров одной команды и одной дорожки на одной высоте.";
     }
 }

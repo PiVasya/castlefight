@@ -3,7 +3,7 @@ package dev.cf;
 import net.minestom.server.coordinate.*;
 import java.util.*;
 
-/** An immutable, single-lane route. Units get this one object, never the three-lane registry. */
+/** An immutable, single-lane route. Units get this one object, never the multi-lane registry. */
 final class CFLanePath {
     final int id;
     final List<Pos> blue,red;
@@ -11,7 +11,7 @@ final class CFLanePath {
     private final Map<Long,List<Double>> reserved;
     CFLanePath(int id,List<Pos> blue,List<Pos> red) { this(id,blue,red,1.0); }
     CFLanePath(int id,List<Pos> blue,List<Pos> red,double clearance) {
-        if(id<1||id>3||blue.size()<2||red.size()<2)throw new IllegalArgumentException("Invalid lane");
+        if(id<1||id>CFMarkerPalette.MAX_LANES||blue.size()<2||red.size()<2)throw new IllegalArgumentException("Invalid lane");
         this.id=id;this.blue=List.copyOf(blue);this.red=List.copyOf(red);
         var all=new ArrayList<>(blue);all.addAll(red);
         corridor=index(all,4.0);reserved=index(all,clearance);
