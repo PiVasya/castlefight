@@ -61,6 +61,14 @@ public final class CF22SelfTest {
             Files.write(region,new byte[]{1,2,3,4,5,6});
             byte[] hash=CFLaneCache.fingerprint(fakeWorld);
             check(hash!=null&&hash.length==32,"hash map source for cache");
+            // Far-away region changes must not recompile a bounded arena.
+            Path outside=fakeWorld.resolve("dimensions/minecraft/overworld/region/r.2.0.mca");
+            Files.write(outside,new byte[]{9,8,7});
+            check(java.util.Arrays.equals(hash,CFLaneCache.fingerprint(fakeWorld)),
+                    "outside the 50-chunk window does not invalidate route cache");
+            Files.write(outside,new byte[]{7,8,9,1});
+            check(java.util.Arrays.equals(hash,CFLaneCache.fingerprint(fakeWorld)),
+                    "changing ignored regions never changes fingerprint");
             var sampleNodes=List.of(new Pos(1.5,8,1.5),new Pos(2.5,8,2.5));
             Map<Integer,CFLanePath> sample=new HashMap<>();
             for(int id=1;id<=4;id++)sample.put(id,new CFLanePath(id,sampleNodes,sampleNodes));

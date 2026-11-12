@@ -101,19 +101,22 @@ public final class CF268TargetRuntimeTest {
             for(int t=1;t<=60;t++)tick(r,t,100_000+t*50);
             Thread.sleep(900); // explicitly exceed the removed 800ms sight grace
             tick(r,60,103_000);
-            check(r.getTarget()==rx && rangedGoal(r),"occluded live target remains locked");
-            check(r.targeting().brain.scans()==scans,"no scans from 20-tick timer or old sight grace");
+            check(r.getTarget()==null && !rangedGoal(r) && !r.isRangedLocked(),
+                    "occluded target is released so the march goal can resume");
+            check(r.targeting().brain.scans()>scans,"archer rechecks visibility after releasing target");
             check(CFClientShot.shots()==shots,"no shots through wall");
-            check(r.getPosition().samePoint(held),"no direct march step after sight loss");
-            check(r.getVelocity().x()==1 && r.getVelocity().z()==.5,"combat hold preserves pushing velocity");
+            check(r.getPosition().samePoint(held),"AI-only test does not advance physics");
+            check(r.getVelocity().x()==1 && r.getVelocity().z()==.5,"resumed march preserves knockback velocity");
             for(int yy=8;yy<13;yy++)for(int zz=1;zz<=7;zz++)rw.setBlock(6,yy,zz,Block.AIR);
+            ry.teleport(new Pos(30,8,4)).get(10,TimeUnit.SECONDS);
             rx.teleport(new Pos(4+r.attackRange(),8,4)).get(10,TimeUnit.SECONDS);
             tick(r,61,104_000);
-            check(r.getTarget()==rx,"inclusive ranged boundary");
+            check(r.getTarget()==rx && rangedGoal(r),"inclusive ranged boundary reacquires enemy");
             CFHoldRangedGoal activeRanged=(CFHoldRangedGoal)r.getAIGroups().iterator().next().getCurrentGoalSelector();
             Field shotClock=CFHoldRangedGoal.class.getDeclaredField("lastShotNs");shotClock.setAccessible(true);
             long clockBefore=shotClock.getLong(activeRanged);
             rx.teleport(new Pos(4+r.attackRange()+.01,8,4)).get(10,TimeUnit.SECONDS);
+            ry.teleport(new Pos(8,8,4)).get(10,TimeUnit.SECONDS);
             check(!activeRanged.shouldEnd(),"range replacement retains active goal");
             check(r.getTarget()==ry && rangedGoal(r),"out of radius replaces target without marching");
             check(shotClock.getLong(activeRanged)==clockBefore,"range retarget preserves shot cooldown");

@@ -1,33 +1,25 @@
 package dev.cf;
 
+import dev.cf.protocol.CFShotWire;
 import net.minestom.server.coordinate.Pos;
-import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Entity;
-import net.minestom.server.entity.EntityType;
 import net.minestom.server.entity.Player;
 import net.minestom.server.instance.Instance;
-import net.minestom.server.network.packet.server.play.DestroyEntitiesPacket;
-import net.minestom.server.network.packet.server.play.SpawnEntityPacket;
 import net.minestom.server.timer.TaskSchedule;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * CF_ENGINE_11_SIMPLE_ARROWS
- *
- * Cosmetic arrows exist only on clients: one spawn packet, one removal packet.
- * Minecraft renders the vanilla-style falling arrow itself.
- * The server does NO projectile simulation, ray tracing, homing or per-tick updates.
- * Damage is resolved once for a selected target on a delayed callback.
+ * Castle Fight V10.5: arrows are visualized ONLY by the Fabric client mod.
+ * Server sends one flight snapshot to compatible clients; vanilla clients see
+ * no projectiles. The server still authoritatively decides hits and damage.
+ * No vanilla arrow entities, fallback packets, or per-tick network movement.
  */
 final class CFClientShot {
     // The only values to tune for the visual flight:
     private static final double VISUAL_SPEED = 1.5;          // blocks/client tick
-    private static final double FIXED_UPWARD_BIAS = 0.17;    // blocks/client tick
-    private static final int VISUAL_LIFETIME_TICKS = 23;     // ~1.15 s total
+    private static final int MAX_FLIGHT_TICKS = 23;         // maximum visual flight duration
     private static final double SPAWN_ABOVE_EYES = 0.12;
 
     private static final double MAX_RANGE = 32.0;
@@ -66,6 +58,12 @@ final class CFClientShot {
             CFHitAudit.notFired(audit, "DIFFERENT_WORLD");
             return;
         }
+        // Server validates the shot even if no compatible client is connected.
+        if (!shooter.hasLineOfSight(target)) {
+            CFHitAudit.notFired(audit, "SHOT_BLOCKED_AT_LAUNCH");
+            CFSkeletonMindLog.event(shooter, "SHOT_BLOCKED", "target", target.getEntityId());
+            return;
+        }
 
         // A single direction calculation on the server; no ballistic solver.
         final Pos from = shooter.getPosition().add(0,
@@ -81,33 +79,37 @@ final class CFClientShot {
             return;
         }
 
-        final double factor = VISUAL_SPEED / distance;
-        final Vec velocity = new Vec(dx * factor,
-                dy * factor + FIXED_UPWARD_BIAS, dz * factor);
-        final Pos spawn = from.withLookAt(from.add(velocity.x(), velocity.y(), velocity.z()));
+        // ID is used for tracing and to identify the client-only flight.
+        // It does NOT represent a vanilla projectile entity.
         final int arrowId = Entity.generateId();
         final long shotStartNs = System.nanoTime();
         final boolean shooterDeadAtLaunch = shooter.isDead();
-
-        // Spawn directly with velocity, no follow-up velocity packet.
-        final SpawnEntityPacket spawnPacket = new SpawnEntityPacket(
-                arrowId, new UUID(0L, Integer.toUnsignedLong(arrowId)),
-                EntityType.ARROW, spawn, spawn.yaw(), shooter.getEntityId(), velocity);
-        final List<Player> viewers = new ArrayList<>();
-        for (Player player : world.getPlayers()) {
-            if (player.getPosition().distanceSquared(from) <= VIEW_RANGE_SQ) {
-                player.sendPacket(spawnPacket);
-                viewers.add(player);
+        final int hitDelayTicks = Math.min(MAX_FLIGHT_TICKS - 2,
+                Math.max(1, (int) Math.ceil(distance / VISUAL_SPEED)));
+        int fabricViewers = 0;
+        try {
+            final CFShotWire.Shot shot = new CFShotWire.Shot(arrowId, "blue".equals(shooter.team()),
+                    (float) from.x(), (float) from.y(), (float) from.z(),
+                    (float) aim.x(), (float) aim.y(), (float) aim.z(), hitDelayTicks);
+            final byte[] visualFrame = CFShotWire.write(shot);
+            for (Player player : world.getPlayers()) {
+                if (player.getPosition().distanceSquared(from) > VIEW_RANGE_SQ) continue;
+                if (!CFShotSync.clientSupportsVisuals(player, world)) continue;
+                player.sendPluginMessage(CFShotWire.VISUAL_CHANNEL, visualFrame);
+                fabricViewers++;
             }
+        } catch (IOException e) {
+            // Network encoding errors never alter authoritative hit/damage rules.
+            // There is deliberately NO vanilla fallback renderer.
+            System.err.println("[КФ СТРЕЛЫ] Пропущена клиентская визуализация выстрела: " + e.getMessage());
         }
+        final int totalViewers = fabricViewers;
 
         SHOTS.incrementAndGet();
         CFTrace.tagArrow(arrowId, shooter);
 
         // Damage is resolved once after this delay. No projectile collision is simulated.
-        final int hitDelayTicks = Math.min(VISUAL_LIFETIME_TICKS - 2,
-                Math.max(1, (int) Math.ceil(distance / VISUAL_SPEED)));
-        CFHitAudit.launched(audit, arrowId, distance, hitDelayTicks, viewers.size());
+        CFHitAudit.launched(audit, arrowId, distance, hitDelayTicks, totalViewers);
         CFTrace.event("ARROW_SHOOT", "arrow", arrowId, "shot", shotId,
                 "duelAuditShot", CFHitAudit.id(audit),
                 "shotStartNs", shotStartNs, "shooter", shooter.getEntityId(),
@@ -116,10 +118,10 @@ final class CFClientShot {
                 "shooterHpAtLaunch", shooter.getHealth(),
                 "target", target.getEntityId(),
                 "targetHpAtFire", target.getHealth(), "hitDelayTicks", hitDelayTicks,
-                "damage", shotDamage, "mode", "CLIENT_FIXED_ARC", "from", CFTrace.xyz(from),
-                "aim", CFTrace.xyz(aim), "velocity", CFTrace.vel(velocity),
-                "speed", VISUAL_SPEED, "upwardBias", FIXED_UPWARD_BIAS,
-                "visibleTicks", VISUAL_LIFETIME_TICKS, "viewers", viewers.size());
+                "damage", shotDamage, "mode", "FABRIC_CLIENT_ONLY", "from", CFTrace.xyz(from),
+                "aim", CFTrace.xyz(aim), "speed", VISUAL_SPEED,
+                "visibleTicks", hitDelayTicks, "viewers", totalViewers,
+                "fabricViewers", fabricViewers);
 
         world.scheduler().buildTask(() -> {
             final float hpBefore = target.getHealth();
@@ -139,6 +141,7 @@ final class CFClientShot {
             if (removedBefore) reason = "TARGET_REMOVED_BEFORE_IMPACT";
             else if (deadBefore) reason = "TARGET_DEAD_BEFORE_IMPACT";
             else if (target.getInstance() != world) reason = "TARGET_CHANGED_WORLD";
+            else if (!shooter.hasLineOfSight(target)) reason = "SHOT_BLOCKED_AT_IMPACT";
             else {
                 dodged=CFArenaAbilities.active()!=null && shooter.isTowerUnit()
                         && CFArenaAbilities.active().dodge(target);
@@ -208,16 +211,8 @@ final class CFClientShot {
                     "hitDelayTicks", hitDelayTicks);
         }).delay(TaskSchedule.tick(hitDelayTicks)).schedule();
 
-        // We DON'T remove on hit: let the client see the arrow fall and lodge.
-        // Fixed lifetime approximates 0.5s stuck in ground on an open flat map.
-        world.scheduler().buildTask(() -> {
-            final DestroyEntitiesPacket destroy = new DestroyEntitiesPacket(arrowId);
-            for (Player viewer : viewers) {
-                if (viewer.getInstance() == world) viewer.sendPacket(destroy);
-            }
-            CFTrace.event("ARROW_VISUAL_REMOVE", "arrow", arrowId,
-                    "lifetimeTicks", VISUAL_LIFETIME_TICKS);
-        }).delay(TaskSchedule.tick(VISUAL_LIFETIME_TICKS)).schedule();
+        // No vanilla projectile was spawned; Fabric expires its own arrow
+        // locally when hitDelayTicks have passed. No destroy packet is needed.
     }
 
     private CFClientShot() { }

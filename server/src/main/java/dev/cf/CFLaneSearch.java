@@ -40,10 +40,48 @@ final class CFLaneSearch {
         double t=len<1e-8?0:Math.clamp(((p.x()-a.x())*dx+(p.z()-a.z())*dz)/len,0,1);
         double x=p.x()-a.x()-dx*t,z=p.z()-a.z()-dz*t;return x*x+z*z;
     }
+    /**
+     * Certify a flat, straight connector without trusting a pathfinder's
+     * BEST_EFFORT result. Even a fully open synthetic road can make the
+     * native search exhaust its heuristic budget; that is not a blocked road.
+     *
+     * This is a strict collision-backed shortcut, NOT a line through blocks:
+     * every quarter-block sample must be inside the allowed corridor, have
+     * solid walkable support, have clear headroom, and be swept-reachable from
+     * the previous sample. A blocked/sloped connector falls back to the
+     * normal ground pathfinder (or fails the compiler if no full path exists).
+     */
+    static List<Pos> certifiedFlatConnector(Block.Getter w,BoundingBox box,Pos a,Pos b,Predicate<Point> domain) {
+        if(Math.abs(a.y()-b.y())>.01 || !domain.test(a) || !domain.test(b))return null;
+        int steps=Math.max(1,(int)Math.ceil(a.distance(b)*4));
+        if(steps>384)return null; // the 96-block link limit is enforced by find()
+        var path=new ArrayList<Pos>(steps+1);
+        var ground=new CFGroundGenerator();
+        Pos previous=a;
+        path.add(a);
+        for(int i=1;i<=steps;i++) {
+            double t=(double)i/steps;
+            Pos next=i==steps ? b : new Pos(
+                    a.x()+(b.x()-a.x())*t,
+                    a.y()+(b.y()-a.y())*t,
+                    a.z()+(b.z()-a.z())*t);
+            if(!domain.test(next) || !clear(w,box,next) ||
+                    !ground.canMoveTowards(w,previous.add(0,.002,0),next.add(0,.002,0),box))
+                return null;
+            path.add(next);
+            previous=next;
+        }
+        return List.copyOf(path);
+    }
+
     static List<Pos> find(Block.Getter w,BoundingBox box,Pos a,Pos b,Predicate<Point> domain) {
         if(!clear(w,box,a)||!clear(w,box,b))throw new IllegalArgumentException("Blocked start/end: "+a+" -> "+b);
         if(a.distanceSquared(b)<.0001)return List.of(a);
         if(a.distance(b)>96)throw new IllegalArgumentException("Connection >96 blocks; extend road dots nearer the castle/tower");
+        // Fully certify a simple level segment before invoking heuristic A*.
+        // This avoids false BEST_EFFORT failures on open, flat castle links.
+        List<Pos> straight=certifiedFlatConnector(w,box,a,b,domain);
+        if(straight!=null)return straight;
         var path=PathGenerator.generate(w,a,b,.35,Math.min(220,Math.max(32,a.distance(b)*2+12)),32,
                 box,true,new Bounded(domain),null);
         var nodes=path.getNodes();
@@ -67,7 +105,7 @@ final class CFLaneSearch {
             if(++expanded>4000)throw new IllegalArgumentException("Path search budget exceeded; put road dots closer");
             return super.getWalkable(w,visited,current,goal,box).stream().filter(n->{
                 Pos p=new Pos(n.x(),n.y(),n.z());
-                return Math.abs(n.y()-current.y())<=1.01 && domain.test(p)&&clear(w,box,p);
+                return CFVerticalTravel.nodeHeightAllowed(current.y(),n.y()) && domain.test(p)&&clear(w,box,p);
             }).toList();
         }
     }

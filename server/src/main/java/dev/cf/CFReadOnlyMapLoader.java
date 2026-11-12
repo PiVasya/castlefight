@@ -29,6 +29,10 @@ final class CFReadOnlyMapLoader implements ChunkLoader {
 
     @Override public void loadInstance(Instance instance) { delegate.loadInstance(instance); }
     @Override public Chunk loadChunk(Instance instance, int x, int z) {
+        // Never read source Anvil terrain outside the active map window.
+        // Returning null leaves Minestom free to supply an empty ephemeral
+        // chunk if someone approaches the edge; no .mca is changed.
+        if (!CFMapWindow.includesChunk(x, z)) return null;
         Chunk chunk = delegate.loadChunk(instance, x, z);
         // Маркеры стоят НА дороге. Скрываем их ТОЛЬКО в памяти чанка.
         // Замки не маскируются: керамика остаётся настоящим полом трона.

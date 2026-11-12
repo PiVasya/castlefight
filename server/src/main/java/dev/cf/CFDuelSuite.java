@@ -695,7 +695,7 @@ final class CFDuelSuite {
                 Path traceSummary = Path.of(trace.toString() + ".summary.txt");
                 if (Files.isRegularFile(traceSummary)) file(out, "trace/event-summary.txt", traceSummary);
                 Path src = Path.of("src/main/java/dev/cf");
-                for (String clazz : List.of("Main", "CFUnit", "MarchGoal", "CFTrace", "CFTraceArrow",
+                for (String clazz : List.of("Main", "CFUnit", "MarchGoal", "CFTrace",
                         "CFTraceMeleeGoal", "CFTraceRangedGoal", "CFTraceTarget", "CFDuelSuite", "MapSurface",
                         "CFConsoleCapture", "CFClientShot", "CFDuelPerf", "CFHitAudit", "CFMotionAudit")) {
                     Path source = src.resolve(clazz + ".java");

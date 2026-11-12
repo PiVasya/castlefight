@@ -8,8 +8,6 @@ final class CFHoldRangedGoal extends GoalSelector {
     private final CFUnit unit;
 
     private long lastShotNs;
-    private boolean invisible;
-    private CFUnit lastSightTarget;
 
     CFHoldRangedGoal(CFUnit unit) {
         super(unit); this.unit = unit;
@@ -33,16 +31,16 @@ final class CFHoldRangedGoal extends GoalSelector {
         stopMotion();
         if (enemy == null) return;
         unit.lookAt(enemy);
-        if (enemy != lastSightTarget) { lastSightTarget = enemy; invisible = false; }
         boolean sight = unit.hasLineOfSight(enemy);
         if (!sight) {
-            if (!invisible) CFSkeletonMindLog.event(unit, "SIGHT_LOST", "target", enemy.getEntityId(),
-                    "decision", "KEEP_TARGET_NO_SHOT");
-            invisible = true;
-            return; // no grace timer, no retarget, no shooting through walls
+            CFSkeletonMindLog.event(unit, "SIGHT_LOST", "target", enemy.getEntityId(),
+                    "decision", "RELEASE_TARGET_RESUME_LANE");
+            // Keeping an unreachable target locked stopped both shooting AND marching.
+            // Drop that target; ranged acquisition already requires line of sight.
+            // Next AI evaluation leaves this goal and resumes the existing lane.
+            unit.setTarget(null);
+            return; // never shoot through walls
         }
-        if (invisible) CFSkeletonMindLog.event(unit, "SIGHT_REGAINED", "target", enemy.getEntityId());
-        invisible = false;
         long now = System.nanoTime();
         if ((lastShotNs == 0 || now - lastShotNs >= unit.attackCooldownMs()*1_000_000L)
                 && unit.targeting().peek() == enemy && unit.targeting().enemy(unit, enemy)
@@ -55,7 +53,6 @@ final class CFHoldRangedGoal extends GoalSelector {
     }
     @Override public void end() {
         unit.setRangedLock(false); unit.getNavigator().reset();
-        lastSightTarget = null; invisible = false;
         CFSkeletonMindLog.event(unit, "COMBAT_END", "target", CFTrace.id(unit.traceTarget()),
                 "decision", "RESUME_NEAREST_FORWARD_LANE");
         // Deliberately retain lastShotNs: reacquiring never gives a free shot.

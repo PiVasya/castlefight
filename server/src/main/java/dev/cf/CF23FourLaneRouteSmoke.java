@@ -90,6 +90,20 @@ public final class CF23FourLaneRouteSmoke {
             for(int id=1;id<=4;id++)check(discovered.get(id).size()==7,"seven beacon points on lane "+id);
             check(masks.footprintLane("blue",-12,8,29)==4,"green 3x3 builds on lane 4");
             check(masks.footprintLane("red",38,8,29)==4,"lime 3x3 builds on lane 4");
+            // Regression: a short, unobstructed castle -> road connector must
+            // compile without depending on native A* heuristic tie-breaking.
+            var terrain=CFLaneSearch.terrain(world);
+            Pos throne=thrones.get("blue"), lane2First=new Pos(.5,8,.5);
+            var domain=CFLaneSearch.tube(throne,lane2First,8);
+            var direct=CFLaneSearch.certifiedFlatConnector(terrain,CFThreeLanes.terrainPoint(),
+                    throne,lane2First,domain);
+            check(direct!=null && direct.getLast().distanceSquared(lane2First)<.0025,
+                    "flat castle link has a complete certified connection");
+            // Never certify a line through an actual obstacle, even on a flat map.
+            world.setBlock(-4,8,3,Block.OBSIDIAN);
+            check(CFLaneSearch.certifiedFlatConnector(terrain,CFThreeLanes.terrainPoint(),
+                    throne,lane2First,domain)==null,"obstructed castle link is not certified");
+            world.setBlock(-4,8,3,Block.AIR);
             var lanes=new CFThreeLanes(world,root,masks,beaconMasks,throneMasks);
             var running=lanes.check(null);pump(world,running);running.join();
             check(lanes.ready()&&lanes.laneCount()==4,"exactly four independent certified paths");

@@ -29,6 +29,12 @@ check_protocol() {
     echo '[CF BUILD] Hover-stats protocol sources differ. Sync CFMobStatsWire.java.' >&2
     exit 1
   fi
+  local shot_server="$ROOT/server/src/main/java/dev/cf/protocol/CFShotWire.java"
+  local shot_client="$ROOT/client/src/main/java/dev/cf/protocol/CFShotWire.java"
+  if [ ! -f "$shot_server" ] || [ ! -f "$shot_client" ] || ! cmp -s -- "$shot_server" "$shot_client"; then
+    echo '[CF BUILD] Arrow protocol sources differ. Sync CFShotWire.java.' >&2
+    exit 1
+  fi
 }
 case "$1" in
   server) check_protocol; bash "$ROOT/server/build.sh" ;;

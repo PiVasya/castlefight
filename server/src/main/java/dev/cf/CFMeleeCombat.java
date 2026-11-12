@@ -14,6 +14,7 @@ final class CFMeleeCombat {
                 : !target.combatAlive() ? "TARGET_NOT_ALIVE"
                 : target.getInstance() != attacker.getInstance() ? "DIFFERENT_WORLD"
                 : target.team().equals(attacker.team()) ? "FRIENDLY"
+                : !CFCombatHeight.meleeAllowed(attacker.getPosition().y(), target.getPosition().y()) ? "HEIGHT_LIMIT"
                 : attacker.getDistanceSquared(target) > Math.pow(attacker.attackRange()+.2,2) ? "OUT_OF_RANGE" : null;
         CFTrace.event("MELEE_ATTEMPT", "swingId", swing, "attacker", attacker.getEntityId(),
                 "attackerMob", attacker.contentId(), "attackerTeam", attacker.team(),
@@ -47,7 +48,7 @@ final class CFMeleeCombat {
         }
         float primary = target.getHealth();
         // Reactions occur only after real HP loss, never after a dodge or rejected damage.
-        if (applied && primary < before && abilities != null)
+        if (applied && primary < before && abilities != null && !attacker.isCastleKing())
             abilities.afterSuccessfulHit(attacker, target, false, action);
         float after = target.getHealth();
         CFHitAudit.meleeDamage(target, before, primary);

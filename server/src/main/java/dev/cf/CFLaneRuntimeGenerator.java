@@ -16,7 +16,7 @@ final class CFLaneRuntimeGenerator extends CFGroundGenerator {
         var candidates=super.getWalkable(w,visited,current,goal,CFThreeLanes.terrainPoint());
         if(!unit.marchGoal().constrainLane())return candidates;
         return candidates.stream().filter(n->{Pos p=new Pos(n.x(),n.y(),n.z());
-            return Math.abs(n.y()-current.y())<=1.01 &&unit.marchGoal().allowsLaneBody(p)&&CFLaneSearch.clear(w,CFThreeLanes.terrainPoint(),p);
+            return CFVerticalTravel.nodeHeightAllowed(current.y(),n.y()) &&unit.marchGoal().allowsLaneBody(p)&&CFLaneSearch.clear(w,CFThreeLanes.terrainPoint(),p);
         }).toList();
     }
 }

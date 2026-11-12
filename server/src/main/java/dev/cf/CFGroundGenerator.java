@@ -15,10 +15,10 @@ class CFGroundGenerator extends PreciseGroundNodeGenerator {
         for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++) {
             if(dx==0&&dz==0)continue;
             Pos top=new Pos(current.blockX()+.5+dx,current.y()+1.01,current.blockZ()+.5+dz);
-            var fall=CollisionUtils.handlePhysics(w,box,top,new Vec(0,-2.02,0),null,true);
+            var fall=CollisionUtils.handlePhysics(w,box,top,new Vec(0,-(1.01+CFVerticalTravel.MAX_DROP+.04),0),null,true);
             if(!fall.collisionY())continue;
             Pos to=fall.newPosition();double rise=to.y()-from.y();
-            if(Math.abs(rise)>1.001 || !CFLaneSearch.clear(w,box,to))continue;
+            if(!CFVerticalTravel.nodeHeightAllowed(from.y(),to.y()) || !CFLaneSearch.clear(w,box,to))continue;
             Pos lifted=from.withY(Math.max(from.y(),to.y())+.002);
             Pos across=new Pos(to.x(),lifted.y(),to.z());
             if(!canMoveTowards(w,from.add(0,.002,0),lifted,box) || !canMoveTowards(w,lifted,across,box))continue;

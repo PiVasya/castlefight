@@ -1,9 +1,11 @@
 package dev.cf.client;
 
 import dev.cf.client.render.CFOverlayMesh;
+import dev.cf.client.render.CFArrowRenderer;
 import dev.cf.client.render.CFOverlayRenderer;
 import dev.cf.client.render.CFMobHud;
 import dev.cf.protocol.CFMobStatsWire;
+import dev.cf.protocol.CFShotWire;
 import dev.cf.protocol.CFOverlayWire;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -24,6 +26,7 @@ public final class CFOverlayClient implements ClientModInitializer {
     private static final CFOverlayWire.Receiver RECEIVER = new CFOverlayWire.Receiver();
     private static CFOverlayMesh mesh;
     private static boolean visible;
+    private static boolean shotHelloSent;
 
     public static CFOverlayMesh currentMesh() { return visible ? mesh : null; }
 
@@ -32,6 +35,16 @@ public final class CFOverlayClient implements ClientModInitializer {
         PayloadTypeRegistry.clientboundPlay().register(CFOverlayPayload.TYPE, CFOverlayPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(CFMobStatsRequestPayload.TYPE, CFMobStatsRequestPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(CFMobStatsResponsePayload.TYPE, CFMobStatsResponsePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CFShotHelloPayload.TYPE, CFShotHelloPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CFShotVisualPayload.TYPE, CFShotVisualPayload.CODEC);
+        ClientPlayNetworking.registerGlobalReceiver(CFShotVisualPayload.TYPE, (payload, context) -> {
+            try {
+                CFShotWire.Shot shot = CFShotWire.read(payload.bytes());
+                context.client().execute(() -> CFArrowRenderer.accept(shot));
+            } catch (java.io.IOException exception) {
+                System.err.println("[КФ КЛИЕНТ] Ошибка пакета стрелы: " + exception.getMessage());
+            }
+        });
         ClientPlayNetworking.registerGlobalReceiver(CFMobStatsResponsePayload.TYPE, (payload, context) -> {
             try {
                 CFMobStatsWire.Reply reply = CFMobStatsWire.readReply(payload.bytes());
@@ -66,6 +79,17 @@ public final class CFOverlayClient implements ClientModInitializer {
                 InputConstants.KEY_G, category));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             CFMobHover.tick(client);
+            CFArrowRenderer.tick();
+            // Minestom advertises the opt-in channel in PLAY, after the join.
+            // On unrelated servers, do not send anything or claim mod support.
+            if (!shotHelloSent && client.getConnection() != null) {
+                try {
+                    if (ClientPlayNetworking.canSend(CFShotHelloPayload.TYPE)) {
+                        ClientPlayNetworking.send(new CFShotHelloPayload());
+                        shotHelloSent = true;
+                    }
+                } catch (RuntimeException ignored) { /* Server does not support CF shots. */ }
+            }
             while (key.consumeClick()) {
                 if (client.player == null) continue;
                 if (mesh == null) {
@@ -81,11 +105,14 @@ public final class CFOverlayClient implements ClientModInitializer {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> clear());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clear());
         CFOverlayRenderer.register();
+        CFArrowRenderer.register();
         CFMobHud.register();
     }
 
     private static void clear() {
         RECEIVER.reset(); mesh=null; visible=false;
         CFMobHover.clear();
+        CFArrowRenderer.clear();
+        shotHelloSent = false;
     }
 }

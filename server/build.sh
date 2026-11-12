@@ -54,13 +54,21 @@ printf '\n[CF BUILD] Compiling with Maven...\n'
 (cd "$REPO" && mvn -B -DskipTests clean package)
 [ -s "$JAR" ] || { echo '[CF BUILD] Missing assembled server JAR' >&2; exit 1; }
 
+# No legacy server-side arrow visuals may re-enter the production firing path.
+# This only validates the source; it never edits or deletes source files.
+if grep -Eq 'SpawnEntityPacket|DestroyEntitiesPacket|EntityType\.ARROW|VANILLA_FALLBACK' \
+    "$REPO/src/main/java/dev/cf/CFClientShot.java"; then
+  echo '[CF BUILD] ОШИБКА: в CFClientShot вернулась старая визуализация стрел!' >&2
+  exit 1
+fi
+
 if [ "${CF_SKIP_SMOKE:-0}" != 1 ]; then
   echo '[CF BUILD] Running source regression checks in isolated temporary data...'
   mkdir -p "$TMP/tests"
   (
     cd "$TMP/tests"
     java -Xmx1G -cp "$JAR" dev.cf.CF271DamageSelfTest
-    for test in CFCastleMarkersSelfTest CFCastleSpawnsSelfTest CFNecromancySelfTest CF271DamageRuntimeSelfTest CF268FactionContentSelfTest CFAbilitiesSelfTest CF22SelfTest CFOverlayWireSelfTest CFMobStatsWireSelfTest; do
+    for test in CFMapWindowSelfTest CFCastleMarkersSelfTest CFCastleSpawnsSelfTest CFKingBehaviorSelfTest CFNecromancySelfTest CF271DamageRuntimeSelfTest CF268FactionContentSelfTest CFAbilitiesSelfTest CF22SelfTest CFVerticalTravelSelfTest CFOverlayWireSelfTest CFMobStatsWireSelfTest CFShotWireSelfTest CFCombatHeightSelfTest; do
       echo "[CF BUILD] Self-test: $test"
       java -Xmx1G -Dcf.target.meleeReviewTicks=20 -cp "$JAR" "dev.cf.$test" "$REPO/content"
     done

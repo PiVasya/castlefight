@@ -17,7 +17,7 @@ import java.util.*;
 final class CFLaneCache {
     private static final int MAGIC=0x43464C52; // "CFLR"
     // Увеличивать при изменениях алгоритма компиляции или формата маршрутов.
-    private static final int VERSION=4; // CF Map 3.0, теперь маршруты привязаны к керамическим замкам
+    private static final int VERSION=5; // CF Map 3.0, замки + маршруты + квадрат чанков [-50..50]
     private static final int HASH_SIZE=32;
     static final String NAME="compiled-routes-v3.bin";
 
@@ -31,13 +31,9 @@ final class CFLaneCache {
     }
 
     static byte[] fingerprint(Path root) throws IOException {
-        Path regions=root.resolve("dimensions/minecraft/overworld/region");
-        if(!Files.isDirectory(regions))return null; // Synthetic tests: do not cache worlds with no Anvil files.
-        List<Path> worlds;
-        try(var files=Files.list(regions)) {
-            worlds=files.filter(p->Files.isRegularFile(p)&&p.getFileName().toString().matches("r\\.-?\\d+\\.-?\\d+\\.mca"))
-                .sorted().toList();
-        }
+        // Ignore region files wholly outside the 101x101 chunk window.
+        // Changing far-away generated terrain must not invalidate this map.
+        List<Path> worlds=CFMapWindow.relevantRegions(root);
         if(worlds.isEmpty())return null;
         try {
             MessageDigest digest=MessageDigest.getInstance("SHA-256");

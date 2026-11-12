@@ -60,7 +60,7 @@ final class CFWideMarch {
         double displacement=lastPosition==null?0:Math.hypot(here.x()-lastPosition.x(),here.z()-lastPosition.z());
         var q=initial?road.nearest(node(here)):
                 road.nearest(node(here),Math.max(0,cursor-4-displacement),
-                        cursor+12+displacement,2.0);
+                        cursor+12+displacement,CFVerticalTravel.ROUTE_HEIGHT_TOLERANCE);
         if(q==null){mode="WIDE_WAIT_HEIGHT";return false;}
         initial=false;projection=q;cursor=q.progress();
         nextIndex=q.nextIndex();lastPosition=here;
@@ -103,20 +103,27 @@ final class CFWideMarch {
         // Terrain support probe is independent of any mob size.
         var box=CFThreeLanes.terrainPoint();
         // If external physics pushed us over the corridor edge, allow gradual return.
-        var old=road.nearest(node(from),Math.max(0,cursor-12),cursor+24,2.0);
-        var now=road.nearest(node(to),Math.max(0,cursor-12),cursor+24,2.0);
+        var old=road.nearest(node(from),Math.max(0,cursor-12),cursor+24,CFVerticalTravel.ROUTE_HEIGHT_TOLERANCE);
+        var now=road.nearest(node(to),Math.max(0,cursor-12),cursor+24,CFVerticalTravel.ROUTE_HEIGHT_TOLERANCE);
         boolean returning=old!=null && now!=null && old.distanceSq()>usableRadius*usableRadius
                 && now.distanceSq()<old.distanceSq()-1.e-10;
         if(!returning && !allowsBody(to)) {
             CFMegaPerf.count(CFMegaPerf.Count.WIDE_SAFE_DENIED, 1);
             return false;
         }
-        // Check that the candidate has a dry, supported landing surface, not water or a cliff.
-        // An already airborne native jump can be up to ~1.25 blocks above its landing floor.
-        double depth=fallback && !unit.isOnGround()?2.10:1.05;
+        // Let gravity carry the mob down short ledges instead of repeatedly
+        // cancelling its horizontal movement until it finds a 1-block floor.
+        // The collision probe must still find a real, DRY landing <= 2 blocks
+        // below the feet (plus the height of an ongoing native jump).
+        boolean airborne=!unit.isOnGround();
         var floor=CollisionUtils.handlePhysics(unit.getInstance(),box,to.add(0,.01,0),
-                new Vec(0,-depth,0),null,true);
-        return floor.collisionY() && CFLaneSearch.clear(unit.getInstance(),box,floor.newPosition());
+                new Vec(0,-CFVerticalTravel.downwardProbe(airborne),0),null,true);
+        return floor.collisionY()
+                && CFVerticalTravel.landingWithinDrop(to.y(),floor.newPosition().y(),airborne)
+                // Enforce the same route-height window at the *landing* too:
+                // an airborne jump must not turn a 3+ block pit into a shortcut.
+                && (returning || allowsBody(floor.newPosition()))
+                && CFLaneSearch.clear(unit.getInstance(),box,floor.newPosition());
     
         } finally { CFMegaPerf.end(CFMegaPerf.Metric.WIDE_SAFE_STEP, _cfMegaCost); }
     }
@@ -154,10 +161,14 @@ final class CFWideMarch {
         follower.moveTowards(aim,follower.movementSpeed(),aim);
         Pos after=unit.getPosition();
         double moved=Math.hypot(after.x()-before.x(),after.z()-before.z());
-        blockedTicks=moved<Math.min(.015,follower.movementSpeed()*.12)?blockedTicks+1:0;
-        pendingFallback=blockedTicks>=2;
+        // Gravity already owns the vertical part of a short descent/jump.
+        // Do not label a brief airborne pause as a terrain stall and reset A*.
+        boolean airborne=!unit.isOnGround();
+        blockedTicks=airborne?0:moved<Math.min(.015,follower.movementSpeed()*.12)?blockedTicks+1:0;
+        pendingFallback=!airborne && blockedTicks>=2;
         if (pendingFallback) CFMegaPerf.count(CFMegaPerf.Count.WIDE_BLOCKED_STEPS, 1);
-        mode=blockedTicks>=2?"WIDE_BLOCKED_TERRAIN":rejoinFrom!=null?"WIDE_REJOIN":"WIDE_DIRECT";
+        mode=airborne?"WIDE_AIRBORNE":blockedTicks>=2?"WIDE_BLOCKED_TERRAIN":
+                rejoinFrom!=null?"WIDE_REJOIN":"WIDE_DIRECT";
         watchProgress();sample();
     
         } finally { CFMegaPerf.end(CFMegaPerf.Metric.WIDE_MARCH_TICK, _cfMegaCost); }

@@ -73,9 +73,9 @@ final class CFWideLaneGeometry {
     
         } finally { CFMegaPerf.end(CFMegaPerf.Metric.WIDE_GEOMETRY_NEAREST, _cfMegaCost); }
     }
-    Projection nearest(Node p) { return nearest(p,0,length,2.0); }
+    Projection nearest(Node p) { return nearest(p,0,length,CFVerticalTravel.ROUTE_HEIGHT_TOLERANCE); }
     boolean contains(Node p,double low,double high,double radius) {
-        Projection q=nearest(p,low,high,2.0);
+        Projection q=nearest(p,low,high,CFVerticalTravel.ROUTE_HEIGHT_TOLERANCE);
         return q!=null && q.distanceSq<=radius*radius+1.e-8;
     }
 

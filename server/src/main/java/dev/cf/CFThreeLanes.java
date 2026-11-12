@@ -91,6 +91,10 @@ final class CFThreeLanes {
                            CommandSender sender,CFLaneCache.CompiledMap cached) {
         if(done.isDone())return;
         try {
+            // Large maps may require hundreds of loading batches. Report
+            // milestones without per-chunk spam or changing the tick budget.
+            if(keys.size()>=512 && (offset%512==0 || offset==keys.size()))
+                System.out.println("[КФ КАРТА] Загружено чанков: "+offset+" / "+keys.size());
             if(offset>=keys.size()){
                 // The world is ALWAYS loaded before using a compiled cache.
                 // On a miss, locate 3x3 ceramic floors from all loaded chunk snapshots.

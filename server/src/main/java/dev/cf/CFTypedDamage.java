@@ -22,6 +22,16 @@ final class CFTypedDamage extends Damage {
         this.hit=hit;
     }
     void resolve(CFDamageTable.Armor armor,CFArenaAbilities effects,CFUnit victim) {
+        // Explicit king rule: a successful basic melee swing removes exactly 10
+        // real HP (=100 int10), regardless of armor and dynamic shields. This is
+        // ONLY for the king; normal damage table and status stages are unchanged.
+        if (getAttacker() instanceof CFUnit attacker && attacker.isCastleKing()) {
+            armorDamage10 = hit.raw10;
+            resolvedDamage10 = hit.raw10;
+            iceShield = false;
+            setAmount(resolvedDamage10 / 10f);
+            return;
+        }
         // Armor lookup is precomputed and immutable. Shields are runtime stages.
         armorDamage10=hit.amount10(armor);
         iceShield=effects!=null && effects.hasIceShield(victim);

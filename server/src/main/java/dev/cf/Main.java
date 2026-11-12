@@ -218,6 +218,7 @@ public final class Main {
         new CFOverlaySync(world, laneTool).start();
         // Hover HUD: серверные характеристики по ID выбранного моба.
         new CFHoverStatsSync(world);
+        new CFShotSync(world);
         Runtime.getRuntime().addShutdownHook(Thread.ofPlatform()
                 .name("cf-soak-shutdown-flush").unstarted(CFSoakTest::shutdownActive));
         startConsole();

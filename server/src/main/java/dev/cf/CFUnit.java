@@ -158,9 +158,10 @@ final class CFUnit extends EntityCreature {
 
         targeting = new CFTargeting(this);
         march = new MarchGoal(this, spawn, enemyCastle);
-        GoalSelector combat = CFCombatBehaviors.create(definition.behavior(), this);
-        addAIGroup(castleKing ? List.of(combat, new CFKingGuardGoal(this,spawn))
-                : List.of(combat, march), List.of(
+        GoalSelector combat = castleKing ? new CFKingGuardGoal(this,spawn)
+                : CFCombatBehaviors.create(definition.behavior(), this);
+        // One king goal owns BOTH defending and returning: neither can starve the other.
+        addAIGroup(castleKing ? List.of(combat) : List.of(combat, march), List.of(
                 new CFTraceTarget(this)
         ));
     }
@@ -304,6 +305,7 @@ final class CFUnit extends EntityCreature {
         // Every living CFUnit processes its own neighbours each tick, including
         // stationary ranged units.  No direct refreshPosition() or escape probes.
         pushNeighbors();
+        if (castleKing) keepKingOnThrone();
     
         } finally {
             CFMegaPerf.end(CFMegaPerf.Metric.UNIT_UPDATE, _cfMegaUnit);
@@ -381,6 +383,19 @@ final class CFUnit extends EntityCreature {
             CFMegaPerf.end(CFMegaPerf.Metric.PUSH_SCAN, _cfMegaPush);
             CFDuelPerf.exitMethod("CFUnit.pushNeighbors", begin);
         }
+    }
+
+    /** A king may be pushed by combat, but cannot be stranded outside his ceramic floor. */
+    private void keepKingOnThrone() {
+        Pos p = getPosition();
+        // Centres of the nine floor blocks are within one block of the throne.
+        // Allow a small body-width margin for physical separation.
+        double x = Math.max(kingThrone.x() - 1.15, Math.min(kingThrone.x() + 1.15, p.x()));
+        double z = Math.max(kingThrone.z() - 1.15, Math.min(kingThrone.z() + 1.15, p.z()));
+        if (x == p.x() && z == p.z()) return;
+        refreshPosition(new Pos(x, p.y(), z, p.yaw(), p.pitch()));
+        Vec v = getVelocity();
+        setVelocity(new Vec(0, v.y(), 0));
     }
 
     private static boolean bodyIntersects(BoundingBox a, Pos pa, BoundingBox b, Pos pb) {

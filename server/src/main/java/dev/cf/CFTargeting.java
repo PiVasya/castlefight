@@ -66,7 +66,9 @@ final class CFTargeting implements CFTargetBrain.World<CFUnit>, Consumer<Entity>
     }
     @Override public boolean inRange(CFUnit u, CFUnit other) {
         return u.getDistanceSquared(other) <= radiusSquared
-                && (!u.isCastleKing() || other.getPosition().distanceSquared(u.kingThrone()) <= radiusSquared);
+                && (ranged || CFCombatHeight.meleeAllowed(u.getPosition().y(), other.getPosition().y()))
+                && (!u.isCastleKing() || (other.getPosition().distanceSquared(u.kingThrone()) <= radiusSquared
+                && CFKingGuardGoal.reachableFromThrone(u.kingThrone(), other.getPosition(), u.attackRange())));
     }
     @Override public CFTargetLinks<CFUnit> links(CFUnit u) { return u.targeting().brain.links; }
 
@@ -94,8 +96,13 @@ final class CFTargeting implements CFTargetBrain.World<CFUnit>, Consumer<Entity>
         double distance = origin.distanceSquared(other.getPosition());
         if (distance > bestSquared || (unit.isCastleKing() &&
                 other.getPosition().distanceSquared(unit.kingThrone()) > radiusSquared)) return;
+        if (!ranged && !CFCombatHeight.meleeAllowed(origin.y(), other.getPosition().y())) return;
         // Deterministic tie-break; no invisible-target replacement for archers.
         if (distance == bestSquared && best != null && other.getEntityId() >= best.getEntityId()) return;
+        // The king cannot leave his 3x3 to chase an unreachable enemy or fight through walls.
+        if (unit.isCastleKing() && (!CFKingGuardGoal.reachableFromThrone(
+                unit.kingThrone(), other.getPosition(), unit.attackRange())
+                || !unit.hasLineOfSight(other))) return;
         if (ranged && !unit.hasLineOfSight(other)) return;
         best = other; bestSquared = distance;
     }

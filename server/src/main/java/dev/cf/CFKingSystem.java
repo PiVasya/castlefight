@@ -12,7 +12,7 @@ import java.util.function.BooleanSupplier;
 /** Two permanent throne guards, independent of tower production and /cf clear. */
 final class CFKingSystem {
     // Units use int10. King = 4000 real HP and 10 real melee damage.
-    private static final CFContentRegistry.Mob KING=new CFContentRegistry.Mob(
+    static final CFContentRegistry.Mob KING=new CFContentRegistry.Mob(
             "castle_king","Король",EntityType.PIGLIN_BRUTE,"melee",
             40000,.025,100,100,0,2.2,6,2500,Material.GOLDEN_SWORD,
             new CFDamageTable.Profile(CFDamageTable.Type.SLASHING,CFDamageTable.Armor.NONE,100,100));
@@ -63,7 +63,16 @@ final class CFKingSystem {
         for(String team:List.of("blue","red")) {
             CFUnit king=kings.get(team);
             out.append(team).append('=');
-            out.append(king==null?"не появился":king.combatAlive()?"жив ("+king.health10()/10.0+" HP)":"пал");
+            if (king == null) out.append("не появился");
+            else if (!king.combatAlive()) out.append("пал");
+            else {
+                int hp = (king.health10() + 9) / 10; // readable whole HP, int10 remains authoritative
+                out.append("жив (").append(hp).append("/4000 HP, позиция ")
+                        .append(CFTrace.xyz(king.getPosition()))
+                        .append(", трон ").append(CFTrace.xyz(king.kingThrone()))
+                        .append(", навигация ").append(king.getNavigator().getState())
+                        .append(')');
+            }
             out.append(' ');
         }
         return out.toString();

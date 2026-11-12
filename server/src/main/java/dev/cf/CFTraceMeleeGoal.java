@@ -45,6 +45,12 @@ final class CFTraceMeleeGoal extends GoalSelector {
             CFUnit target = unit.targeting().resolve();
             var nav = unit.getNavigator();
             if (target == null) { nav.reset(); navigationTarget = null; return; }
+            if (!CFCombatHeight.meleeAllowed(unit.getPosition().y(), target.getPosition().y())) {
+                // Do not chase or strike an enemy on a different floor.
+                unit.setTarget(null);
+                nav.reset(); navigationTarget = null;
+                return;
+            }
             // Stop a path to the previous enemy before any navigation tick.
             if (navigationTarget != target) { nav.reset(); navigationTarget = target; }
             if (unit.getDistanceSquared(target) <= attackRangeSquared) {
