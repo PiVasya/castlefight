@@ -1,0 +1,150 @@
+# CF Map 3.0 — единственный стандарт карты Castle Fight
+
+> **НЕ ДОБАВЛЯТЬ поддержку старых схем. НЕ ЧИТАТЬ маршруты из ковров.**
+> Ковры нужны только для строительства башен на базах. Маяки стоят ПРЯМО НА ДОРОГЕ.
+> Эти правила являются прямым требованием автора игры и продублированы
+> большим комментарием в `CFMarkerPalette.java`.
+
+**Размещение:** после сборки перенеси всю папку `dist/CastleFight/` отдельно
+от Git и помещай карты в её `maps/`. Кеш `compiled-routes-v3.bin` создаётся
+там же, внутри карты. Перекомпиляция JAR для добавления карты не нужна.
+Кеш маршрутов НЕ заменяет загрузку мира: при каждом запуске сервер всё равно
+подгружает Anvil-чанки и маскирует маркеры в памяти, а пути пересчитывает
+только при отсутствии актуального кеша.
+
+## 1. Файлы мира
+
+```text
+maps/
+  my-arena/
+    dimensions/minecraft/overworld/region/r.0.0.mca
+    cf/
+      map.properties
+      compiled-routes-v3.bin  # создаёт ядро после успешной проверки
+```
+
+Мир готовится независимо от КФ. Внутри `cf/map.properties` требуется **строго
+`schema=3.0`**. Если файл отсутствует или версия другая, сервер отказывает в
+запуске карты. Ни конвертации, ни автоматических старых режимов не существует.
+
+## 2. Маршрутные маяки
+
+Ставь вдоль каждого пути на самой поверхности дороги:
+
+```text
+         ВОЗДУХ
+     [ЦВЕТНОЕ СТЕКЛО]    <- команда не кодируется; только номер пути
+     [МАГНЕТИТ]          <- непосредственно НА ДОРОЖНОМ ПОКРЫТИИ
+     [ПОЛНЫЙ БЛОК ПОЛА]  <- поверхность дороги
+```
+
+Если дорога — блок `Y=7`, магнетит `Y=8`, стекло `Y=9`.
+Никаких блоков над стеклом и никакого дополнительного пола поверх маяка.
+
+| Лайн | Стекло над магнетитом |
+|---:|---|
+| 1 | BROWN_STAINED_GLASS |
+| 2 | RED_STAINED_GLASS |
+| 3 | ORANGE_STAINED_GLASS |
+| 4 | YELLOW_STAINED_GLASS |
+
+Количество дорожек определяется количеством последовательных групп маяков,
+от 1 до 4. Номера должны идти подряд (1; 1–2; 1–3; 1–4). От двух маяков
+одного цвета на путь; добавляй на поворотах. Точки соединяются безопасным
+маршрутом, а не по прямой через препятствия. Если порядок неоднозначен,
+компиляция выдаёт ошибку.
+
+**Ограничение:** один маршрут каждого цвета должен образовывать
+одну цепочку без разветвлений. В текущем движке алгоритм автоматически
+связывает близкие маяки; узкие петли могут потребовать переразметки.
+
+Когда загружается карта, ядро запоминает координаты этих конструкций,
+а магнетит и стекло заменяет воздухом **только в игровом экземпляре мира**.
+Файлы `.mca` сохраняются неизменными. Это нужно, чтобы мобы не врезались
+в путевые метки.
+
+## 3. Ковры базы — ВСЕ 16 цветов
+
+**Никаких ковров-маркеров маршрута.** Каждый цвет однозначно определяет
+пару `(команда, номер лайна)`.
+
+| Лайн | Синие — 2 варианта | Красные — 2 варианта |
+|---:|---|---|
+| 1 | CYAN, WHITE | PURPLE, BROWN |
+| 2 | LIGHT_BLUE, LIGHT_GRAY | MAGENTA, RED |
+| 3 | BLUE, GRAY | PINK, ORANGE |
+| 4 | GREEN, BLACK | LIME, YELLOW |
+
+Это **альтернативные** цвета внутри одной пары команда/лайн.
+Для башни разрешена только полная площадка 3×3 **из девяти ковров одного цвета**.
+Смешивать даже два варианта одной команды и одного лайна нельзя.
+Никогда не вычислять лайн по ближайшему маршруту.
+
+Для каждого присутствующего лайна компилятор требует хотя бы одну полную
+строительную площадку для синей и красной команд.
+Если на карте есть ковры лайна без соответствующих маяков — ошибка.
+
+## 4. Castles: compiled glazed-terracotta squares, not config coordinates
+
+Place EXACTLY one flat 3x3 floor of `BLUE_GLAZED_TERRACOTTA` and exactly
+one flat 3x3 floor of `RED_GLAZED_TERRACOTTA`. Each of the nine blocks in a
+floor must be the SAME color and at the SAME Y. They can cross chunk borders.
+A random decorative single tile is ignored; a missing, mixed or duplicate
+square fails compilation. Keep at least two blocks of air above the center so
+that a king can stand there. Leave a walkable connection from each throne to
+its lane road markers; castle coordinates anchor ALL lane routes.
+
+For each block at (x,y,z) on the floor, the king stands at the middle position
+`(centerBlockX + 0.5, y + 1, centerBlockZ + 0.5)`.
+
+Minimal `cf/map.properties`:
+
+```properties
+schema=3.0
+dot.max-gap=12
+# Optional explicit player spawn (all three or none):
+# spawn.x=4.5
+# spawn.y=12
+# spawn.z=12.5
+```
+
+Do NOT write `blue.x`, `blue.y`, `blue.z`, `red.x`, `red.y`, `red.z`.
+Castle coordinates are derived ONLY from ceramic blocks in the world and
+included in the CF Map 3.0 compiled result. If `spawn.*` is not specified,
+players default to the midpoint between the detected thrones, +2 Y.
+On irregular maps, use all three `spawn.*` to select a safe point.
+
+The king is a separate, very slow melee guard spawned at each compiled throne:
+4000 HP (server int10=40000), 10 damage (int10=100), 2.2 reach,
+6-block detection, 2.5-second attack cooldown. The king only fights nearby
+intruders and otherwise returns to his throne; he is not assigned to an army
+lane, and /cf clear must not remove him. CASTLES THEMSELVES HAVE NO HP.
+There is no final win/loss cycle implemented for king death yet.
+
+## 5. Компиляция и сохранение
+
+На первом запуске ядро проверяет маяки, строительные площадки,
+керамические замки 3x3 и проходимость маршрутов в обе стороны. При успехе сохраняет бинарный кеш
+**`cf/compiled-routes-v3.bin` рядом с миром**, не в JAR и не в `build.sh`.
+
+Cache content: both castle centers AND 1-4 validated two-way lane routes.
+The cache version is upgraded; stale V9 cache is safely recompiled.
+При повторном запуске кеш читается после проверки SHA-256 конфигурации
+и исходных регионов карты. Если источник изменён, кеш будет пересчитан.
+Это автоматическая однократная компиляция для неизменной карты.
+
+**Запись изменений мира игрой запрещена.** Компилятор пишет только кеш
+в директорию `cf/`, не изменяя регионов `.mca`.
+
+## 6. Отклоняемые карты
+
+* Отсутствует `cf/map.properties` с `schema=3.0`.
+* Castle blue/red 3x3 is absent, mixed, oversized, duplicated, or obstructed.
+* Obsolete castle coordinates `blue.*` or `red.*` in map.properties.
+* Маркеры маршрута представлены коврами, а маяков нет.
+* Магнетит и стекло скрыты под дорогой или стоят над пустотой.
+* Путевые номера пропущены; нет двух маяков для какого-либо пути.
+* Строительная площадка содержит смесь цветов, дырки или несуществующий лайн.
+* Маршрут непроходим или его маяки образуют неоднозначную цепочку.
+
+**Правило нельзя "упрощать" в следующих версиях.**

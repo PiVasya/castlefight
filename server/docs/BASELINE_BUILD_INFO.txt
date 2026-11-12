@@ -1,0 +1,6 @@
+version=2.6.6-wide-lanes+overnight-mega-v1+combat-burn-v2+target-cadence-v1+factions-int10-v1+tower-ui-ru-v1+no-mob-size-check-v1+damage-stages-intui-dark-clean-tower-cmd-testfix-v2+necromancy-on-death-hotfix-v3-same-lane-faction-testfix
+baseVersion=2.6.6-wide-lanes+overnight-mega-v1+combat-burn-v2+target-cadence-v1+factions-int10-v1+tower-ui-ru-v1+no-mob-size-check-v1
+installed=20261104-170224-1793800944709414597
+jarSha256=aa5b698d6ad3065e23ffa6039a9ee6f40326e97f15a0fae1d17d2f7c51c2b3da
+publicVersion=2.6.8.3
+patch=target-cadence,dark-snow-tiers,integer-hp-damage,faction-effects,tower-ru-ui,no-mob-size-gates,damage-armor-only,post-armor-shields,int-display,dark-migration,no-legacy-tower-commands,ability-selftest-migration,necromancy-on-death-zombie,death-lane-inheritance-tests

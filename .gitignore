@@ -1,14 +1,21 @@
-/target/
+# Generated build products (never commit runtime maps or binaries)
 /dist/
-*.class
-*.log
+/server/target/
+/client/.gradle/
+/client/build/
+/client/out/
+/.gradle/
+/target/
 /.idea/
 /.vscode/
-/.env
-# Do not commit runtime state, maps, tokens, backups, or player files.
+*.class
+*.log
+*.pid
+.env
+.env.*
+# Runtime state (in case accidentally created in the repository)
 /maps/
-/navigation/
+/data/
 /diagnostics/
 /backups/
 /ops.txt
-/castles-map.properties
