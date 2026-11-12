@@ -21,7 +21,7 @@ public final class CF22WorldSmoke {
         Path dir=Path.of(args[0]).toAbsolutePath().normalize();
         if(Files.exists(dir))throw new IllegalArgumentException("Test folder must not exist: "+dir);
         Files.createDirectory(dir);
-        // No Main, no CFWorldMode constructor, no lane tool, no real server mode/config files.
+        // Isolated test fixture, no game server or user maps are opened.
         MinecraftServer.init();
         try {
             Path arena=dir.resolve("test-world");
@@ -39,12 +39,11 @@ public final class CF22WorldSmoke {
 
             var zones=new CFCarpetZones();
             var play=MinecraftServer.getInstanceManager().createInstanceContainer();
-            play.setChunkLoader(new CFWorldMode.ReadOnlyLoader(new AnvilLoader(arena,
-                    Key.key("minecraft:overworld")),zones));
+            play.setChunkLoader(new CFReadOnlyMapLoader(arena,zones));
             for(int x=-1;x<=1;x++)play.loadChunk(x,0).orTimeout(15,TimeUnit.SECONDS).join();
-            check(play.getBlock(15,40,3).air(),"PLAY removes visible blue carpet");
-            check(play.getBlock(-1,40,8).air(),"PLAY removes visible red carpet");
-            check(play.getBlock(4,40,14).air(),"PLAY hides road dots too");
+            check(play.getBlock(15,40,3).air(),"Runtime hides visible blue carpet");
+            check(play.getBlock(-1,40,8).air(),"Runtime hides visible red carpet");
+            check(play.getBlock(4,40,14).air(),"Runtime hides road dots too");
             check(zones.markAt(4,40,14).road() && zones.markAt(4,40,14).lane()==2,"red = lane 2 road, not build cell");
             check(zones.footprintLane("blue",15,40,3)==1,"cyan footprint binds lane 1");
             check(!zones.covers("red",4,40,14),"road dots cannot place buildings");
@@ -55,12 +54,12 @@ public final class CF22WorldSmoke {
             play.setBlock(15,40,3,Block.GRAY_CONCRETE);
             play.saveChunksToStorage().orTimeout(15,TimeUnit.SECONDS).join();
             for(Chunk c:List.copyOf(play.getChunks()))play.unloadChunk(c);
-            check(baseline.equals(hashes(arena)),"PLAY save attempt leaves .mca bytes unchanged");
+            check(baseline.equals(hashes(arena)),"Runtime save request leaves source .mca bytes unchanged");
 
             var again=MinecraftServer.getInstanceManager().createInstanceContainer();
             again.setChunkLoader(new AnvilLoader(arena,Key.key("minecraft:overworld")));
             again.loadChunk(0,0).orTimeout(15,TimeUnit.SECONDS).join();
-            check(again.getBlock(15,40,3).compare(Block.CYAN_CARPET),"BUILD reload restores saved carpet, not PLAY cube");
+            check(again.getBlock(15,40,3).compare(Block.CYAN_CARPET),"Source map retains saved carpet, not runtime block changes");
             check(again.getBlock(15,39,3).compare(Block.STONE),"foundation survives roundtrip");
             for(Chunk c:List.copyOf(again.getChunks()))again.unloadChunk(c);
             System.out.println("[CF22 WORLD TEST] SUCCESS. Tested only "+arena);

@@ -33,8 +33,8 @@ Red construction zone colors: PURPLE (1), MAGENTA (2), PINK (3).
 
 The engine validates 3 connected routes between the two castle positions in
 both directions at startup and requires contiguous 3x3 construction masks for
-each team and lane. PLAY hides the markers in loaded chunks without saving the
-changes to the original world. No external world editor is included.
+each team and lane. The runtime hides carpet markers in memory without saving any changes to the
+original world. Map editing takes place outside Castle Fight.
 
 Diagnostic duels use the selected map's castle markers and compute safe spawn
 positions dynamically. No precomputed spawn-position asset is needed.

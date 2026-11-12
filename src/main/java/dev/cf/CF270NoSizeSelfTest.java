@@ -3,9 +3,6 @@ package dev.cf;
 import net.minestom.server.collision.BoundingBox;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.instance.block.Block;
-import java.nio.file.Path;
-import java.util.AbstractCollection;
-import java.util.Iterator;
 
 /** Regression: no Castle Fight route/spawn gate may be keyed to mob dimensions. */
 public final class CF270NoSizeSelfTest {
@@ -15,18 +12,9 @@ public final class CF270NoSizeSelfTest {
         if (!value) throw new AssertionError(reason);
     }
     public static void main(String[] args) {
-        var routes = new CFThreeLanes(null, Path.of("cf270-test-map-unique"), null, () -> false);
-        var trap = new AbstractCollection<CFContentRegistry.Mob>() {
-            @Override public Iterator<CFContentRegistry.Mob> iterator() {
-                throw new AssertionError("Route validator iterated mob sizes!");
-            }
-            @Override public int size() {
-                throw new AssertionError("Route validator read mob collection!");
-            }
-        };
-        routes.profile(trap);
-        ok(routes.envelope() == CFThreeLanes.terrainPoint(), "routes use one terrain probe");
-        ok(routes.envelope().width() < .1 && routes.envelope().height() < .1,
+        var terrainProbe = CFThreeLanes.terrainPoint();
+        ok(terrainProbe == CFThreeLanes.terrainPoint(), "one deterministic terrain probe");
+        ok(terrainProbe.width() < .1 && terrainProbe.height() < .1,
                 "route point probe is not a mob hitbox");
 
         Block.Getter flat = (x, y, z, condition) -> y < 0 ? Block.STONE : Block.AIR;

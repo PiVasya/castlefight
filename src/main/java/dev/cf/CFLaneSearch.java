@@ -15,7 +15,7 @@ final class CFLaneSearch {
         return (x,y,z,c)->{
             if(world.getChunk(Math.floorDiv(x,16),Math.floorDiv(z,16))==null)return Block.BARRIER;
             Block b=world.getBlock(x,y,z,c);
-            return CFMarkerPalette.of(b)!=null?Block.AIR:b; // BUILD markers do not become physical steps
+            return CFMarkerPalette.of(b)!=null?Block.AIR:b; // Carpet markers are map metadata, not physical steps
         };
     }
     static boolean clear(Block.Getter w,BoundingBox box,Pos p) {

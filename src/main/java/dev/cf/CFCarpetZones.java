@@ -5,7 +5,7 @@ import net.minestom.server.instance.block.Block;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Disk carpets are the source of truth. PLAY hides all nine colors, never saves them away. */
+/** Disk carpets define navigation and build zones; runtime hides them only in memory. */
 final class CFCarpetZones {
     private final Map<Long,Map<CFPlacementRules.Cell,CFMarkerPalette.Mark>> playChunks=new ConcurrentHashMap<>();
     static long key(int x,int z){return ((long)x<<32)^(z&0xffffffffL);}
@@ -27,11 +27,10 @@ final class CFCarpetZones {
                 if(mark!=null)out.put(new CFPlacementRules.Cell(c.getChunkX()*16+x,sy+y,c.getChunkZ()*16+z),mark);});
         }return out;
     }
-    Map<CFPlacementRules.Cell,CFMarkerPalette.Mark> snapshot(Instance world,boolean build) {
+    Map<CFPlacementRules.Cell,CFMarkerPalette.Mark> snapshot(Instance world) {
         var out=new HashMap<CFPlacementRules.Cell,CFMarkerPalette.Mark>();
         for(Chunk c:world.getChunks()) {
-            if(build){c.lockReadLock();try{out.putAll(scan(c));}finally{c.unlockReadLock();}}
-            else out.putAll(playChunks.getOrDefault(key(c.getChunkX(),c.getChunkZ()),Map.of()));
+            out.putAll(playChunks.getOrDefault(key(c.getChunkX(),c.getChunkZ()),Map.of()));
         }return Map.copyOf(out);
     }
     CFMarkerPalette.Mark markAt(int x,int y,int z) {
@@ -46,8 +45,8 @@ final class CFCarpetZones {
         return lane;
     }
     boolean covers(String team,int x,int y,int z){return footprintLane(team,x,y,z)>0;}
-    String summary(Instance world,boolean build){
-        var counts=new TreeMap<String,Integer>();snapshot(world,build).values().forEach(m->counts.merge(m.role(),1,Integer::sum));
-        return "[CF CARPETS] "+(build?"BUILD visible":"PLAY hidden")+" (loaded chunks): "+counts+"; 9 cells of ONE lane/team at ONE Y required.";
+    String summary(Instance world){
+        var counts=new TreeMap<String,Integer>();snapshot(world).values().forEach(m->counts.merge(m.role(),1,Integer::sum));
+        return "[CF CARPETS] Hidden markers (loaded chunks): "+counts+"; 9 cells of ONE lane/team at ONE Y required.";
     }
 }

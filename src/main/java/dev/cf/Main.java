@@ -1,7 +1,6 @@
 package dev.cf;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.key.Key;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.command.builder.Command;
 import net.minestom.server.command.builder.arguments.ArgumentType;
@@ -10,7 +9,6 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.entity.EntityProjectile;
 import net.minestom.server.event.entity.projectile.ProjectileCollideWithEntityEvent;
 import net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent;
-import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.damage.Damage;
 import net.minestom.server.entity.damage.DamageType;
 import net.minestom.server.event.entity.EntityAttackEvent;
@@ -22,7 +20,6 @@ import net.minestom.server.event.player.PlayerSpawnEvent;
 import net.minestom.server.event.server.ServerTickMonitorEvent;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.LightingChunk;
-import net.minestom.server.instance.anvil.AnvilLoader;
 import net.minestom.server.instance.block.Block;
 
 import java.io.*;
@@ -49,15 +46,13 @@ public final class Main {
     }
     private final Set<CFUnit> units = ConcurrentHashMap.newKeySet();
     private final Set<String> ops = ConcurrentHashMap.newKeySet();
-    private final Properties castles = new Properties();
     // Incremented when units are cleared: cancels queued spawn batches.
     private volatile long spawnEpoch = 0;
     private static final int SPAWN_PER_TICK = 32;
     private boolean healthBarsEnabled = true;
     private final CFDuelSuite duelSuite;
     private final CFContentRegistry combatContent;
-    private final CFSingleLaneTool laneTool;
-    private final CFWorldMode worldMode;
+    private final CFGameArena laneTool;
     private boolean manualDuel;
     // Reserve the sole profiling session before any asynchronous chunk loading.
     private CFDuelSuite activeDuel;
@@ -84,10 +79,10 @@ public final class Main {
         if (!Files.isDirectory(mapPath.resolve("dimensions/minecraft/overworld/region"))) {
             throw new IllegalStateException("Castle map not found: " + mapPath.toAbsolutePath());
         }
-        worldMode = new CFWorldMode(mapPath);
+        CFCarpetZones carpets = new CFCarpetZones();
         world = MinecraftServer.getInstanceManager().createInstanceContainer();
         world.setChunkSupplier(LightingChunk::new);
-        world.setChunkLoader(worldMode.loader());
+        world.setChunkLoader(new CFReadOnlyMapLoader(mapPath, carpets));
         world.setTime(6000);
         try { combatContent=new CFContentRegistry(Path.of("content")); }
         catch (IOException e) { throw new IllegalStateException("Invalid combat content",e); }
@@ -103,14 +98,13 @@ public final class Main {
                     event.getTickMonitor().getAcquisitionTime(), units.size());
         });
         loadData();
-        laneTool = new CFSingleLaneTool(world, units, () -> activeSuite() != null,
-                () -> healthBarsEnabled, worldMode::isBuild, mapPath, worldMode.carpets());
+        laneTool = new CFGameArena(world, units, () -> activeSuite() != null,
+                () -> healthBarsEnabled, mapPath, carpets);
         MinecraftServer.getGlobalEventHandler().addListener(ServerTickMonitorEvent.class,
                 event -> CFNightControl.poll(laneTool));
         // Map-scoped castle markers are authoritative; do not inherit another map's defaults.
         blue=laneTool.castle("blue");
         red=laneTool.castle("red");
-        worldMode.attach(world, laneTool);
 
         MinecraftServer.getGlobalEventHandler()
                 .addListener(AsyncPlayerConfigurationEvent.class, event -> {
@@ -207,9 +201,6 @@ public final class Main {
 
         registerCommands();
         laneTool.start();
-        worldMode.start();
-        Runtime.getRuntime().addShutdownHook(Thread.ofPlatform()
-                .name("cf-world-shutdown-save").unstarted(worldMode::saveOnShutdownHook));
         Runtime.getRuntime().addShutdownHook(Thread.ofPlatform()
                 .name("cf-soak-shutdown-flush").unstarted(CFSoakTest::shutdownActive));
         startConsole();
@@ -227,79 +218,8 @@ public final class Main {
     private void registerCommands() {
         Command cf = new Command("cf");
         cf.setDefaultExecutor((sender, context) ->
-                sender.sendMessage(Boolean.getBoolean("cf.play.only")
-                        ? "/cf routes status | /cf ai status | /cf kit | /cf tower catalog | " +
-                          "/cf duel status | /cf clear | /cf mode status"
-                        : "/we help (BUILD WorldEdit) | /cf carpets | /cf routes status | /cf ai status | /cf kit | /cf tower catalog | " +
-                          "/cf duel motion | /cf duel hits | /cf duel [count] | /cf mode build|play|status | /cf save"));
-        var castleTeam = ArgumentType.Word("castle-team").from("red", "blue");
-        cf.addSyntax((sender, context) -> {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage("[CF] Use this command in game.");
-                return;
-            }
-            String team = context.get(castleTeam);
-            if (player.getPermissionLevel() < 4) { sender.sendMessage("[CF] Operator required."); return; }
-            if (laneTool.editorBusy()) { sender.sendMessage("[CF] Wait for route validation to finish."); return; }
-            if (player.getInstance() != world) {
-                sender.sendMessage("[CF] Return to the castle map first: /cf map");
-                return;
-            }
-            if (!worldMode.isBuild()) {
-                sender.sendMessage("[CF] Castle markers are map data; edit only in BUILD mode.");
-                return;
-            }
-            Pos p = player.getPosition();
-            Pos location = MapSurface.find(world, p.blockX(), p.blockZ(), p.y(), 2);
-            if (location == null) {
-                sender.sendMessage("[CF] Stand on a solid full block with two empty blocks above it.");
-                return;
-            }
-            synchronized (this) {
-            if (activeSuite() != null) {
-                sender.sendMessage("[CF] Finish the active duel before moving a castle.");
-                return;
-            }
-            Pos other = getCastle(team.equals("red") ? "blue" : "red");
-            if (other != null && other.distance(location) < 20) {
-                sender.sendMessage("[CF] Castles must be at least 20 blocks apart.");
-                return;
-            }
-            if (other != null && other.distance(location) > 240) {
-                sender.sendMessage("[CF] For this test, maximum distance is 240 blocks.");
-                return;
-            }
-            try { laneTool.setCastle(team, location); }
-            catch (IOException ex) { sender.sendMessage("[CF] Castle save failed: " + ex); return; }
-            Pos previous = getCastle(team);
-            CFTrace.event("CASTLE_MOVE", "team", team, "from", CFTrace.xyz(previous),
-                    "to", CFTrace.xyz(location));
-            if (team.equals("red")) red = location;
-            else blue = location;
-            saveCastles();
-            // Keep all units alive. Re-route the team attacking the moved castle.
-            if (red != null && blue != null) {
-                readyRoute().whenComplete((ignored, error) ->
-                        world.scheduler().scheduleNextTick(() -> {
-                            if (error != null) {
-                                error.printStackTrace();
-                                return;
-                            }
-                            synchronized (this) {
-                                if (activeSuite() != null || !location.equals(getCastle(team))) return;
-                                for (CFUnit unit : units) {
-                                    if (unit.getInstance() == world && !unit.isDead() && !unit.isRemoved()
-                                            && !unit.team().equals(team)) {
-                                        unit.updateDestination(location);
-                                    }
-                                }
-                            }
-                        }));
-            }
-            sender.sendMessage("[CF] " + team + " castle at X=" + location.blockX()
-                    + " Y=" + location.blockY() + " Z=" + location.blockZ());
-            }
-        }, ArgumentType.Literal("castle"), castleTeam);
+                sender.sendMessage("/cf routes status | /cf ai status | /cf kit | /cf tower catalog | " +
+                        "/cf duel status | /cf clear | /cf status"));
 
         cf.addSyntax((sender, context) -> {
             sender.sendMessage("[CF] RED=" + red + " BLUE=" + blue);
@@ -438,45 +358,15 @@ public final class Main {
         }, ArgumentType.Literal("arrows"));
 
         laneTool.register(cf);
-        worldMode.register(cf);
         MinecraftServer.getCommandManager().register(cf);
 
-        Command gm = new Command("gamemode", "gm");
-        var modeArg = ArgumentType.Word("mode")
-                .from("creative", "survival", "adventure", "spectator");
-        gm.addSyntax((sender, context) -> {
-            if (!(sender instanceof Player p) || p.getPermissionLevel() < 4) {
-                sender.sendMessage("No permission.");
-                return;
-            }
-            p.setGameMode(GameMode.valueOf(context.get(modeArg).toUpperCase(Locale.ROOT)));
-            sender.sendMessage("[CF] Gamemode changed.");
-        }, modeArg);
-        MinecraftServer.getCommandManager().register(gm);
-
-        Command time = new Command("time");
-        var timeArg = ArgumentType.Word("period").from("day", "noon", "night");
-        time.addSyntax((sender, context) -> {
-            if (!(sender instanceof Player p) || p.getPermissionLevel() < 4) {
-                sender.sendMessage("No permission.");
-                return;
-            }
-            long ticks = switch (context.get(timeArg)) {
-                case "night" -> 13000L;
-                case "noon" -> 6000L;
-                default -> 1000L;
-            };
-            world.setTime(ticks);
-            sender.sendMessage("[CF] Time changed.");
-        }, timeArg);
-        MinecraftServer.getCommandManager().register(time);
     }
 
     private Pos getCastle(String team) { return team.equals("red") ? red : blue; }
 
     private boolean hasBothCastles(net.minestom.server.command.CommandSender sender) {
         if (red != null && blue != null) return true;
-        sender.sendMessage("[CF] Set both castles: /cf castle red and /cf castle blue");
+        sender.sendMessage("[CF] Missing castle positions in the selected map cf/lanes-v2.properties");
         return false;
     }
 
@@ -571,7 +461,7 @@ public final class Main {
                     List<Pos> positions = spawnPositions(team);
                     if (positions.isEmpty()) {
                         sender.sendMessage("[CF] No safe spawn positions near the " + team +
-                                " castle. Set it on open ground with /cf castle " + team + ".");
+                                " castle. Check the map metadata and clear ground near the castle.");
                         return;
                     }
                     spawnTeam(team, kind, count, positions);
@@ -612,7 +502,7 @@ public final class Main {
                         releaseReservation(duelSuite, reservation);
                         sender.sendMessage("[CF] No safe spawn positions near " +
                                 (redPositions.isEmpty() ? "red" : "blue") +
-                                " castle. Move it to open ground using /cf castle.");
+                                " castle. Prepare clear ground around the castle in the source map.");
                         return;
                     }
                     String report = beginReserved(duelSuite, reservation, () -> duelSuite.startManual(count));
@@ -710,38 +600,6 @@ public final class Main {
                     if (!line.isBlank()) ops.add(line.trim().toLowerCase(Locale.ROOT));
                 }
             }
-            Path castleFile = Path.of("castles-map.properties");
-            if (Files.exists(castleFile)) {
-                try (InputStream in = Files.newInputStream(castleFile)) {
-                    castles.load(in);
-                }
-            }
-            red = readCastle("red");
-            blue = readCastle("blue");
-        } catch (IOException e) { throw new UncheckedIOException(e); }
-    }
-
-    private Pos readCastle(String team) {
-        String x = castles.getProperty(team + ".x");
-        String y = castles.getProperty(team + ".y");
-        String z = castles.getProperty(team + ".z");
-        return x == null || y == null || z == null ? null :
-                new Pos(Double.parseDouble(x) + .5, Double.parseDouble(y), Double.parseDouble(z) + .5);
-    }
-
-    private void saveCastles() {
-        if (red != null) {
-            castles.setProperty("red.x", Integer.toString(red.blockX()));
-            castles.setProperty("red.y", Integer.toString(red.blockY()));
-            castles.setProperty("red.z", Integer.toString(red.blockZ()));
-        }
-        if (blue != null) {
-            castles.setProperty("blue.x", Integer.toString(blue.blockX()));
-            castles.setProperty("blue.y", Integer.toString(blue.blockY()));
-            castles.setProperty("blue.z", Integer.toString(blue.blockZ()));
-        }
-        try (OutputStream out = Files.newOutputStream(Path.of("castles-map.properties"))) {
-            castles.store(out, "CF locations");
         } catch (IOException e) { throw new UncheckedIOException(e); }
     }
 
@@ -794,10 +652,6 @@ public final class Main {
                         } else System.out.println("[CF SOAK] soak night [rounds] [seconds] | soak stress [rounds] [seconds] | soak status | soak stop");
                     } else if (parts.length == 1 && parts[0].equalsIgnoreCase("stop")) {
                         CFSoakTest.shutdownActive();
-                        if (!worldMode.saveOnConsoleStop()) {
-                            System.err.println("[CF] Stop cancelled: world save failed.");
-                            continue;
-                        }
                         MinecraftServer.stopCleanly();
                         return;
                     } else System.out.println("[CF] op <nick> | deop <nick> | soak night [rounds] [seconds] | soak stress [rounds] [seconds] | soak status | soak stop | stop");

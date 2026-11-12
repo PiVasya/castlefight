@@ -33,8 +33,20 @@ public final class CF22RouteSmoke {
                 else {int x=m.team().equals("blue")?-12:38;
                     for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)w.setBlock(x+dx,8,z+5+dz,m.block());}
             }
-            var masks=new CFCarpetZones();var routes=new CFThreeLanes(w,root,masks,()->true);
-            routes.setCastle("blue",new Pos(-8.5,8,12.5));routes.setCastle("red",new Pos(32.5,8,12.5));
+            Path config=root.resolve("cf/lanes-v2.properties");
+            Files.createDirectories(config.getParent());
+            var configProperties = new Properties();
+            configProperties.setProperty("schema","2.2");
+            configProperties.setProperty("blue.x","-8.5");
+            configProperties.setProperty("blue.y","8.0");
+            configProperties.setProperty("blue.z","12.5");
+            configProperties.setProperty("red.x","32.5");
+            configProperties.setProperty("red.y","8.0");
+            configProperties.setProperty("red.z","12.5");
+            try(var out=Files.newOutputStream(config)){configProperties.store(out,"synthetic test map");}
+            var masks=new CFCarpetZones();
+            for(Chunk chunk:List.copyOf(w.getChunks()))masks.preparePlayChunk(chunk);
+            var routes=new CFThreeLanes(w,root,masks);
             var f=routes.check(null);pump(w,f);f.join();check(routes.ready(),"all three lanes valid");
             for(int id=1;id<=3;id++) {
                 var lane=routes.lane(id);check(lane!=null&&lane.id==id,"separate lane id");
@@ -50,7 +62,7 @@ public final class CF22RouteSmoke {
                 boolean denied=false;try{unit.assignValidatedLane(routes.lane(id%3+1),lane.blue);}catch(IllegalStateException expected){denied=true;}
                 check(denied&&unit.laneId()==id,"lane reassignment forbidden");
             }
-            var loaded=new CFThreeLanes(w,root,masks,()->true);
+            var loaded=new CFThreeLanes(w,root,masks);
             check(loaded.castle("blue").equals(routes.castle("blue")),"castle config reload");
             check(!loaded.ready(),"unvalidated cached config cannot authorize a match");
             for(int z=-16;z<48;z++)for(int y=8;y<14;y++)w.setBlock(12,y,z,Block.STONE);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Game-only, read-only map launcher. Lives beside core/, maps/, data/.
+# Castle Fight game launcher. Lives beside core/, maps/, data/.
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 JAR="$ROOT/core/server.jar"
@@ -63,7 +63,7 @@ elif [ -z "$SX" ] || [ -z "$SY" ] || [ -z "$SZ" ]; then
 fi
 
 RUN="$ROOT/data/runs/$MAP_ID"
-mkdir -p "$RUN/navigation" "$RUN/diagnostics"
+mkdir -p "$RUN/diagnostics"
 if [ -e "$RUN/content" ] && [ ! -L "$RUN/content" ]; then
   echo "[CF] Refusing to replace non-symlink content directory at $RUN/content" >&2; exit 1
 fi
@@ -74,21 +74,15 @@ if [ -L "$RUN/content" ]; then
 else
   ln -s ../../../core/content "$RUN/content"
 fi
-cp -- "$LANES" "$RUN/navigation/$MAP_ID-lanes-v2.properties"
-printf 'mode=PLAY\nmap=%s\n' "$MAP_ID" > "$RUN/navigation/$MAP_ID-server-mode.properties"
-if [ -f "$MAP/cf/castles-map.properties" ]; then
-  cp -- "$MAP/cf/castles-map.properties" "$RUN/castles-map.properties"
-fi
 cp -- "$ROOT/core/CF_BUILD_INFO.txt" "$RUN/CF_BUILD_INFO.txt"
 if [ -f "$ROOT/data/ops.txt" ] && [ ! -e "$RUN/ops.txt" ]; then
   ln -s ../../ops.txt "$RUN/ops.txt"
 fi
 
 printf '[CF] Map: %s\n[CF] Spawn: %s %s %s\n' "$MAP_ID" "$SX" "$SY" "$SZ"
-echo '[CF] Game-only PLAY; map files are read-only to the game engine.'
+echo '[CF] Game-only runtime; the selected map is read-only.'
 cd "$RUN"
 exec java -Xms512M -Xmx"${CF_MAX_RAM:-2G}" \
-  -Dcf.play.only=true \
   -Dcf.map.path="$MAP" -Dcf.map.id="$MAP_ID" \
   -Dcf.spawn.x="$SX" -Dcf.spawn.y="$SY" -Dcf.spawn.z="$SZ" \
   -jar "$JAR" "$@"

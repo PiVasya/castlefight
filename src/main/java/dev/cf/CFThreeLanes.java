@@ -10,54 +10,45 @@ import java.nio.file.*;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.function.BooleanSupplier;
 
-/** BUILD compiler / PLAY startup validation. No global route search during unit updates. */
+/** Compiles three carpet-marked routes from a prepared external map at runtime. */
 final class CFThreeLanes {
-    private final InstanceContainer world;private final Path mapRoot,file;
-    private final CFCarpetZones carpets;private final BooleanSupplier build;
-    private final Map<String,Pos> castles=new HashMap<>();
-    private volatile Map<Integer,CFLanePath> lanes=Map.of();
-    private volatile String status="NOT_CHECKED: /cf routes check";
+    private final InstanceContainer world;
+    private final Path mapRoot;
+    private final CFCarpetZones carpets;
+    private final Map<String,Pos> castles = new HashMap<>();
+    private volatile Map<Integer,CFLanePath> lanes = Map.of();
+    private volatile String status = "NOT_CHECKED";
     private volatile CompletableFuture<Void> checking;
-    /** Only a point probe for terrain topology. Never derived from any mob hitbox. */
+    /** Terrain uses a point probe, independently of unit size. */
     private static final BoundingBox TERRAIN_POINT = new BoundingBox(.04,.04,.04);
-    private double gap=12;
-    CFThreeLanes(InstanceContainer world,Path root,CFCarpetZones carpets,BooleanSupplier build) {
-        this.world=world;mapRoot=root;this.carpets=carpets;this.build=build;
-        String id=root.getFileName().toString().replaceAll("[^a-zA-Z0-9_-]","_");
-        file=Path.of("navigation",id+"-lanes-v2.properties");
-        if(Files.exists(file))try(InputStream in=Files.newInputStream(file)) {
-            Properties p=new Properties();p.load(in);
-            if(!"2.2".equals(p.getProperty("schema")))throw new IOException("Unsupported lane schema");
-            for(String t:List.of("blue","red"))if(p.containsKey(t+".x"))castles.put(t,readPos(p,t));
-            gap=Double.parseDouble(p.getProperty("dot.max-gap","12"));
-            if(!Double.isFinite(gap)||gap<2||gap>16)throw new IOException("dot.max-gap must be 2..16");
-        }catch(Exception e){throw new IllegalStateException("Invalid lane config "+file,e);}
-    }
-    /** Compatibility hook for the content registry: mob dimensions NEVER affect routes. */
-    void profile(Collection<CFContentRegistry.Mob> mobs){ /* no size gate */ }
-    static BoundingBox terrainPoint(){return TERRAIN_POINT;}
-    BoundingBox envelope(){return TERRAIN_POINT;}
-    Path file(){return file;}
-    synchronized void setCastle(String team,Pos p)throws IOException {
-        Pos old=castles.put(team,p);invalidate("CASTLE_CHANGED");
-        try { save(); } catch(IOException e) {
-            if(old==null)castles.remove(team);else castles.put(team,old);
-            throw e;
+    private final double gap;
+
+    CFThreeLanes(InstanceContainer world, Path mapRoot, CFCarpetZones carpets) {
+        this.world = world;
+        this.mapRoot = mapRoot;
+        this.carpets = carpets;
+        Path file = mapRoot.resolve("cf/lanes-v2.properties");
+        if (!Files.isRegularFile(file))
+            throw new IllegalStateException("Missing map config: " + file);
+        try (InputStream in = Files.newInputStream(file)) {
+            Properties p = new Properties();
+            p.load(in);
+            if (!"2.2".equals(p.getProperty("schema")))
+                throw new IllegalArgumentException("Expected schema=2.2");
+            for (String team : List.of("blue", "red"))
+                castles.put(team, readPos(p, team));
+            gap = Double.parseDouble(p.getProperty("dot.max-gap", "12"));
+            if (!Double.isFinite(gap) || gap < 2 || gap > 16)
+                throw new IllegalArgumentException("dot.max-gap must be 2..16");
+        } catch (Exception e) {
+            throw new IllegalStateException("Invalid map config " + file, e);
         }
     }
-    synchronized Pos castle(String team){return castles.get(team);}
-    synchronized void save()throws IOException {
-        if(!build.getAsBoolean())throw new IOException("PLAY layout is read-only");
-        Properties p=new Properties();p.setProperty("schema","2.2");p.setProperty("dot.max-gap",String.valueOf(gap));
-        for(var e:castles.entrySet())writePos(p,e.getKey(),e.getValue());
-        Files.createDirectories(file.getParent());Path tmp=file.resolveSibling(file.getFileName()+".tmp");
-        try(OutputStream out=Files.newOutputStream(tmp)){p.store(out,"CF 2.2; carpet BLOCKS hold road dots + six construction masks. Castles per map.");}
-        try{Files.move(tmp,file,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);}
-        catch(AtomicMoveNotSupportedException e){Files.move(tmp,file,StandardCopyOption.REPLACE_EXISTING);}
-    }
-    void invalidate(String why){lanes=Map.of();status="NEEDS_CHECK: "+why;}
+
+    static BoundingBox terrainPoint() { return TERRAIN_POINT; }
+    BoundingBox envelope() { return TERRAIN_POINT; }
+    synchronized Pos castle(String team) { return castles.get(team); }
     boolean busy(){var c=checking;return c!=null&&!c.isDone();}
     boolean ready(){return lanes.size()==3&&!busy();}
     CFLanePath lane(int id){return lanes.get(id);}
@@ -68,7 +59,7 @@ final class CFThreeLanes {
         if(busy())return checking;
         var done=new CompletableFuture<Void>();checking=done;lanes=Map.of();status="LOADING_MAP";
         Pos blue=castles.get("blue"),red=castles.get("red");
-        if(blue==null||red==null){fail(done,sender,new IllegalArgumentException("Set both castles in BUILD: /cf castle blue and /cf castle red"));return done;}
+        if(blue==null||red==null){fail(done,sender,new IllegalArgumentException("Missing castles in map metadata"));return done;}
         if(blue.distance(red)<4){fail(done,sender,new IllegalArgumentException("Castle points are too close"));return done;}
         Thread.ofVirtual().name("cf-route-chunk-index").start(()->{
             try {
@@ -76,7 +67,7 @@ final class CFThreeLanes {
                 world.scheduler().scheduleNextTick(()->loadBatch(chunks,0,blue,red,done,sender));
             }catch(Exception e){fail(done,sender,e);}
         });
-        if(sender!=null)sender.sendMessage("[CF ROUTES] Checking ALL saved/loaded map chunks, 3 lanes and BOTH directions. BUILD edits are locked until completion.");
+        if(sender!=null)sender.sendMessage("[CF ROUTES] Validating map chunks, three lanes and both directions.");
         return done;
     }
     private void loadBatch(List<Long> keys,int offset,Pos blue,Pos red,CompletableFuture<Void> done,CommandSender sender) {
@@ -94,7 +85,7 @@ final class CFThreeLanes {
     private record Segment(int lane,boolean reverse,Pos from,Pos to,boolean castleLink){}
     private void prepare(Pos blue,Pos red,CompletableFuture<Void> done,CommandSender sender) {
         try {
-            var snapshot=carpets.snapshot(world,build.getAsBoolean());Block.Getter terrain=CFLaneSearch.terrain(world);
+            var snapshot=carpets.snapshot(world);Block.Getter terrain=CFLaneSearch.terrain(world);
             blue=CFLaneSearch.surface(terrain,TERRAIN_POINT,blue);red=CFLaneSearch.surface(terrain,TERRAIN_POINT,red);
             var queue=new ArrayDeque<Segment>();
             for(int id=1;id<=3;id++) {
@@ -136,7 +127,7 @@ final class CFThreeLanes {
                 for(int i=1;i<=3;i++) {Collections.reverse(r.get(i));built.put(i,new CFLanePath(i,flatten(f.get(i)),flatten(r.get(i)),1.05));}
                 lanes=Map.copyOf(built);status="VALID: all 3 lanes reach both castles; no mob size checks";
                 writeReport(status,null);done.complete(null);
-                if(sender!=null){sender.sendMessage("[CF ROUTES] VALID: 3/3 lanes, both directions. /cf save, then /cf mode play.");
+                if(sender!=null){sender.sendMessage("[CF ROUTES] VALID: 3/3 lanes, both directions.");
                     for(var e:lanes.entrySet())sender.sendMessage("[CF ROUTES] Lane "+e.getKey()+": blue="+e.getValue().blue.size()+" red="+e.getValue().red.size()+" validated ground nodes.");}
                 System.out.println(status());
             }catch(Exception e){fail(done,sender,e);}return;
@@ -172,5 +163,4 @@ final class CFThreeLanes {
         if(!Double.isFinite(pos.x())||!Double.isFinite(pos.y())||!Double.isFinite(pos.z())||Math.abs(pos.x())>30000000||Math.abs(pos.z())>30000000||pos.y()<-64||pos.y()>319)
             throw new IllegalArgumentException("Invalid castle position");return pos;
     }
-    static void writePos(Properties p,String k,Pos v){p.setProperty(k+".x",Double.toString(v.x()));p.setProperty(k+".y",Double.toString(v.y()));p.setProperty(k+".z",Double.toString(v.z()));}
 }

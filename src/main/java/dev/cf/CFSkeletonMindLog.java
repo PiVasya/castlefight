@@ -21,7 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * PLAY tower skeleton brain recorder: 5Hz snapshots + every AI decision,
+ * Runtime tower skeleton brain recorder: 5Hz snapshots + every AI decision,
  * including navigation/target transitions. Non-blocking bounded queue;
  * a single daemon writer handles all skeletons. No synchronous disk IO on a tick.
  */

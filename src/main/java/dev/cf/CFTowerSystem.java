@@ -25,7 +25,7 @@ final class CFTowerSystem {
     private static final Tag<String> TOKEN = Tag.String("cf.building.id");
     private final InstanceContainer world;
     private final Set<CFUnit> units;
-    private final BooleanSupplier duel, build, bars;
+    private final BooleanSupplier duel, bars;
     private final CFCarpetZones carpets;
     private final CFContentRegistry content;
     private final CFArenaAbilities abilities;
@@ -67,9 +67,9 @@ final class CFTowerSystem {
         }
     }
     CFTowerSystem(InstanceContainer world,Set<CFUnit> units,BooleanSupplier duel,
-                  BooleanSupplier bars,BooleanSupplier build,CFCarpetZones carpets,
+                  BooleanSupplier bars,CFCarpetZones carpets,
                   CFThreeLanes routes) {
-        this.world=world;this.units=units;this.duel=duel;this.bars=bars;this.build=build;
+        this.world=world;this.units=units;this.duel=duel;this.bars=bars;
         this.carpets=carpets;this.routes=routes;
         try { content=new CFContentRegistry(Path.of("content")); }
         catch (Exception e) { throw new IllegalStateException("CF content validation failed: " + e.getMessage(),e); }
@@ -85,34 +85,33 @@ final class CFTowerSystem {
             }
         }); }
         catch(Exception e) { throw new IllegalStateException("Abilities failed validation: "+e.getMessage(),e); }
-        routes.profile(content.mobs());
         soak = new CFSoakTest(world, units, content, abilities, routes, this::spawnAbilityUnit, this::clearTestUnits);
         System.out.println("[CF CONTENT] mobs="+content.mobs().size()+" towers="+content.towers().size());
     }
     synchronized int count() { return towers.size(); }
     CFArenaAbilities abilities() { return abilities; }
     String consoleSoakStart(int rounds,int seconds) {
-        if(build.getAsBoolean()||duel.getAsBoolean()||!routes.ready())
-            return "[CF SOAK] Requires PLAY and all 3 valid routes; no active duel.";
+        if(duel.getAsBoolean()||!routes.ready())
+            return "[CF SOAK] Requires all three valid routes and no active duel.";
         return soak.start(rounds,seconds);
     }
     String consoleSoakNight(int rounds,int seconds) {
-        if(build.getAsBoolean()||duel.getAsBoolean()||!routes.ready())
-            return "[CF NIGHT] Requires PLAY, valid routes, and no active duel.";
+        if(duel.getAsBoolean()||!routes.ready())
+            return "[CF NIGHT] Requires valid routes and no active duel.";
         return soak.startNight(rounds,seconds);
     }
     String consoleSoakBurn(int rounds,int seconds) {
-        if(build.getAsBoolean()||duel.getAsBoolean()||!routes.ready())
-            return "[CF BURN] Requires PLAY, valid routes, and no active duel.";
+        if(duel.getAsBoolean()||!routes.ready())
+            return "[CF BURN] Requires valid routes and no active duel.";
         return soak.startBurn(rounds,seconds);
     }
     String consoleSoakStress(int rounds,int seconds) {
-        if(build.getAsBoolean()||duel.getAsBoolean()||!routes.ready())
-            return "[CF STRESS] Requires PLAY, valid routes, and no active duel.";
+        if(duel.getAsBoolean()||!routes.ready())
+            return "[CF STRESS] Requires valid routes and no active duel.";
         return soak.startStress(rounds,seconds);
     }
     String consoleSoakVerify() {
-        if(build.getAsBoolean()||duel.getAsBoolean())return "[CF VERIFY] PLAY required, finish other tests first.";
+        if(duel.getAsBoolean())return "[CF VERIFY] Finish active tests before starting verification.";
         return soak.startVerify();
     }
     String consoleSoakStatus(){return soak.status();}
@@ -135,7 +134,6 @@ final class CFTowerSystem {
         },ArgumentType.Literal("race"),race);
         cf.addSyntax((s,c)->{
             if (!(s instanceof Player p) || p.getInstance()!=world) return;
-            if (build.getAsBoolean()) { s.sendMessage("[CF] Выбор команды доступен только в режиме PLAY.");return; }
             teams.put(p.getUuid(),c.get(team));
             s.sendMessage("[CF] Команда: "+CFTowerPresentation.teamName(c.get(team))+
                     ". Строй на цветных коврах своей команды.");
@@ -148,7 +146,7 @@ final class CFTowerSystem {
                     " | "+CFTowerPresentation.summon(d,content)+
                     " | каждые "+d.intervalSeconds()+" с");
         },ArgumentType.Literal("content"),ArgumentType.Literal("list"));
-        cf.addSyntax((s,c)->s.sendMessage(carpets.summary(world,build.getAsBoolean())),
+        cf.addSyntax((s,c)->s.sendMessage(carpets.summary(world)),
                 ArgumentType.Literal("carpets"),ArgumentType.Literal("status"));
         cf.addSyntax((s,c)->{
             s.sendMessage("[CF] Построено башен: "+count()+"/"+content.limits().towers()+
@@ -186,8 +184,8 @@ final class CFTowerSystem {
         },ArgumentType.Literal("tower"),ArgumentType.Literal("upgrade"),upgradeId);
         var removeId=ArgumentType.Integer("tower-remove-id");
         cf.addSyntax((s,c)->{
-            if(!admin(s) || build.getAsBoolean() || soak.isRunning()) {
-                s.sendMessage("[CF] Demolition requires PLAY, operator, and no soak test.");return;
+            if(!admin(s) || soak.isRunning()) {
+                s.sendMessage("[CF] Demolition requires operator access and no soak test.");return;
             }
             if(s instanceof Player p && p.getInstance()!=world)return;
             final long id=c.get(removeId).longValue();
@@ -277,7 +275,7 @@ final class CFTowerSystem {
                 ArgumentType.Literal("test"),ArgumentType.Literal("status"));
         var events=MinecraftServer.getGlobalEventHandler();
         events.addListener(PlayerSpawnEvent.class,e->{
-            if(e.getPlayer().getInstance()==world && !build.getAsBoolean()) {
+            if(e.getPlayer().getInstance()==world) {
                 teams.putIfAbsent(e.getPlayer().getUuid(),"blue");
                 giveKit(e.getPlayer(),1);
             }
@@ -287,7 +285,7 @@ final class CFTowerSystem {
         });
         events.addListener(PlayerBlockInteractEvent.class,e->{
             Player p=e.getPlayer();
-            if (p.getInstance()!=world || build.getAsBoolean()) return;
+            if (p.getInstance()!=world) return;
             e.setCancelled(true); e.setBlockingItemUse(true);
             ItemStack item=p.getItemInHand(e.getHand());
             String id=item.getTag(TOKEN);
@@ -334,13 +332,13 @@ final class CFTowerSystem {
             });
         });
         events.addListener(PlayerBlockPlaceEvent.class,e->{
-            if(e.getPlayer().getInstance()==world && !build.getAsBoolean()) {e.setCancelled(true);e.consumeBlock(false);}
+            if(e.getPlayer().getInstance()==world) {e.setCancelled(true);e.consumeBlock(false);}
         });
         events.addListener(PlayerBlockBreakEvent.class,e->{
-            if(e.getPlayer().getInstance()==world && !build.getAsBoolean()) e.setCancelled(true);
+            if(e.getPlayer().getInstance()==world) e.setCancelled(true);
         });
         events.addListener(net.minestom.server.event.item.ItemDropEvent.class,e->{
-            if(e.getPlayer().getInstance()==world && !build.getAsBoolean() && e.getItemStack().getTag(TOKEN)!=null)
+            if(e.getPlayer().getInstance()==world && e.getItemStack().getTag(TOKEN)!=null)
                 e.setCancelled(true);
         });
     }
@@ -349,7 +347,6 @@ final class CFTowerSystem {
         return true;
     }
     private boolean playAllowed(Player p) {
-        if(build.getAsBoolean()) {p.sendMessage("[CF] Башни строятся только в режиме PLAY; переключи режим и перезапусти.");return false;}
         if(duel.getAsBoolean() || soak.isRunning()) {p.sendMessage("[CF] Сначала заверши стресс-тест.");return false;}
         return p.getInstance()==world;
     }
@@ -431,9 +428,9 @@ final class CFTowerSystem {
         return message;
     }
     private synchronized String place(String actor,String team,String id,int x,int y,int z) {
-        if(build.getAsBoolean()||duel.getAsBoolean()||soak.isRunning())
-            return rejectBuild(actor,team,id,x,y,z,"MATCH_MODE", "[CF СТРОЙКА] Нельзя строить во время редактирования карты, дуэли или стресс-теста.",
-                    "buildMode",build.getAsBoolean(),"duel",duel.getAsBoolean(),"soak",soak.isRunning());
+        if(duel.getAsBoolean()||soak.isRunning())
+            return rejectBuild(actor,team,id,x,y,z,"MATCH_MODE", "[CF] Нельзя строить во время дуэли или стресс-теста.",
+                    "duel",duel.getAsBoolean(),"soak",soak.isRunning());
         if(!routes.ready())return rejectBuild(actor,team,id,x,y,z,"ROUTES_NOT_READY",
                 "[CF СТРОЙКА] Маршруты пока не готовы. " + routes.status());
         CFContentRegistry.Tower d=content.tower(id);
@@ -543,8 +540,8 @@ final class CFTowerSystem {
     private synchronized String upgradeById(long id,String team,boolean admin,Pos player) {
         Tower t=towers.get(id);
         if(t==null)return "[CF УЛУЧШЕНИЕ] Башня #"+id+" не найдена.";
-        if(build.getAsBoolean() || duel.getAsBoolean() || soak.isRunning() || !routes.ready())
-            return "[CF УЛУЧШЕНИЕ] Нельзя улучшать во время строительства карты, дуэли или стресс-теста.";
+        if(duel.getAsBoolean() || soak.isRunning() || !routes.ready())
+            return "[CF УЛУЧШЕНИЕ] Нельзя улучшать во время дуэли или стресс-теста.";
         if(!admin && !t.team.equals(team))return "[CF УЛУЧШЕНИЕ] Это башня другой команды.";
         if(!admin && player.distanceSquared(new Pos(t.x+.5,t.y,t.z+.5))>64)
             return "[CF УЛУЧШЕНИЕ] Подойди ближе, максимум 8 блоков.";
@@ -625,8 +622,8 @@ final class CFTowerSystem {
         if((!allowSoak && soak.isRunning())) {
             sender.sendMessage("[CF TEST] Soak running; /cf soak status or /cf soak stop.");return false;
         }
-        if(build.getAsBoolean() || duel.getAsBoolean() || !routes.ready()) {
-            sender.sendMessage("[CF TEST] PLAY, validated 3 routes, no duel required.");return false;
+        if(duel.getAsBoolean() || !routes.ready()) {
+            sender.sendMessage("[CF TEST] Three validated routes and no active duel required.");return false;
         }
         if(sender instanceof Player p && p.getInstance()!=world){
             sender.sendMessage("[CF TEST] Enter this map first.");return false;
@@ -659,7 +656,7 @@ final class CFTowerSystem {
     }
     /** Used by mutations, revivals, periodic summons and OP test spawns. Never changes the saved map. */
     boolean spawnAbilityUnit(String team,String mobId,int laneId,Pos near) {
-        if(build.getAsBoolean() || !routes.ready() || units.size()>=content.limits().units())return false;
+        if(!routes.ready() || units.size()>=content.limits().units())return false;
         CFContentRegistry.Mob mob=content.mob(mobId);
         CFLanePath lane=routes.lane(laneId);
         if(mob==null || lane==null)return false;
@@ -700,7 +697,7 @@ final class CFTowerSystem {
 
     /** Resurrection and necromancy: do not project a death position onto road nodes. */
     private boolean spawnDeathProcExact(String team,String mobId,int laneId,Pos deathPos) {
-        if (build.getAsBoolean() || !routes.ready() || units.size()>=content.limits().units()) {
+        if (!routes.ready() || units.size()>=content.limits().units()) {
             CFTrace.event("DEATH_SPAWN_FAILED","reason","UNAVAILABLE_OR_ARMY_LIMIT",
                     "team",team,"mob",mobId,"lane",laneId,"requested",CFTrace.xyz(deathPos));
             return false;
@@ -747,7 +744,7 @@ final class CFTowerSystem {
      * Does not reserve positions or restrict simultaneous tower spawns.
      */
     private boolean spawnSummonedAhead(CFUnit source,String mobId) {
-        if (build.getAsBoolean() || !routes.ready() || source.isDead() || source.isRemoved()
+        if (!routes.ready() || source.isDead() || source.isRemoved()
                 || source.getInstance()!=world || units.size()>=content.limits().units()) return false;
         CFLanePath lane = routes.lane(source.laneId());
         CFContentRegistry.Mob def = content.mob(mobId);
@@ -777,9 +774,8 @@ final class CFTowerSystem {
     }
 
     void start() {
-        if(build.getAsBoolean()){System.out.println("[CF СТРОЙКА] BUILD: all marker carpets visible; tower scheduler OFF.");return;}
         routes.check(null).whenComplete((v,e)->System.out.println(e==null?
-                "[CF СТРОЙКА] Three routes validated; towers enabled.":"[CF СТРОЙКА] Towers DISABLED: fix carpet map/castles in BUILD."));
+                "[CF СТРОЙКА] Three routes validated; towers enabled.":"[CF СТРОЙКА] Towers DISABLED: check map carpets and castle positions."));
         world.scheduler().buildTask(this::tick).delay(TaskSchedule.tick(1)).repeat(TaskSchedule.tick(1)).schedule();
     }
     private synchronized void tick() {

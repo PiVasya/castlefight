@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BooleanSupplier;
 
 /**
- * PLAY-only, opt-in, bounded-memory, many-round battle test. This is not a fake combat simulation:
+ * Game-runtime-only, opt-in, bounded-memory, many-round battle test. This is not a fake combat simulation:
  * every initial unit enters the real validated lane near its own castle, using the normal CFUnit AI.
  * Every recorded game event is sent to one asynchronous disk writer, not written on the tick thread.
  * No global tracing overhead while the suite is inactive; no map data is ever saved or edited.

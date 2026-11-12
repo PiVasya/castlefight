@@ -18,7 +18,7 @@ final class CFNightControl {
     private static int ticks;
     private CFNightControl() {}
 
-    static void poll(CFSingleLaneTool tool) {
+    static void poll(CFGameArena tool) {
         if (++ticks % 20 != 0) return;
         if (!Files.isRegularFile(REQUEST) || Files.isSymbolicLink(REQUEST)) return;
         String raw;
