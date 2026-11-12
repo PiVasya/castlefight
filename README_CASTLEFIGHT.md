@@ -43,9 +43,11 @@ bash build.sh all
 
 * `server` requires Java 25 and Maven. Tests run before the release core is
   replaced, and existing maps and data inside `dist/CastleFight/` survive.
-* `client` requires Java 25, Gradle 9.5.1+ and an internet connection for
-  Fabric dependencies. If you later add the standard `client/gradlew`, the
-  build script uses it first. Otherwise, Gradle must be installed on PATH.
+* `client` requires Java 25 and Fabric dependencies from the internet. Fabric
+  Loom 1.18.2 requires **Gradle 9.7.0+**. The build script uses a compatible
+  local Gradle/Wrapper, or downloads the official, SHA-256-verified **9.7.1**
+  distribution into `~/.cache/castlefight/gradle/` on its first run. Fedora's
+  Gradle 9.4.1 can stay installed; no system upgrade is needed.
 * `all` builds server first, then client. The two artifacts remain separate.
 * The build scripts never delete or rewrite code, never perform a Git action,
   never transfer maps into the repository, and never modify your moved server.
@@ -141,3 +143,21 @@ arrow entity и пакетов создания/удаления. Стрелы �
 Fabric-мод. Без мода стрелы не видны, но урон вычисляется сервером как раньше.
 Для этой версии нужно собрать **и сервер, и клиент** (`bash build.sh all`).
 Описание: `docs/V10_5_VERTICAL_COMBAT_FABRIC_ARROWS.md`.
+
+
+### V10.5.1 — надёжная регрессия возврата дальника к маршу
+
+`CFKingBehaviorSelfTest` теперь загружает конечную синтетическую область
+из 49 чанков для штатного навигатора Minestom. Он проверяет возврат короля,
+его точные HP/урон и освобождение дальником цели за стеной, не падая из-за
+отсутствующего тестового чанка с отрицательным Z. Ни боевая логика, ни
+пользовательская карта не менялись. См. `docs/V10_5_1_KING_TEST_CHUNKS.md`.
+
+### V10.5.2 — исправление Gradle для Fabric клиента
+
+В Fedora был установлен Gradle 9.4.1. Сборка сервера завершалась успешно,
+но Loom 1.18.2 требовал API Gradle 9.7.0 и клиент падал на стадии
+настройки плагинов. `client/build.sh` теперь выбирает совместимый Gradle
+или самостоятельно получает официальную версию 9.7.1 в пользовательский
+кеш с проверкой SHA-256. Никаких JAR, сборочных инструментов и карт в
+Git-репозиторий не добавляется. См. `docs/V10_5_2_GRADLE_BOOTSTRAP.md`.

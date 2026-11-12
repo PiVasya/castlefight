@@ -108,8 +108,22 @@ public final class CFKingBehaviorSelfTest {
             // It must release the target and resume ordinary march instead of freezing.
             InstanceContainer lane = MinecraftServer.getInstanceManager().createInstanceContainer();
             lane.setGenerator(c -> c.modifier().fillHeight(0, 8, Block.STONE));
-            lane.loadChunk(0, 0).get(10, TimeUnit.SECONDS);
-            lane.loadChunk(1, 0).get(10, TimeUnit.SECONDS);
+            // After the archer loses sight, MarchGoal resumes native Minestom
+            // navigation. A* examines neighbouring terrain beyond the straight
+            // segment, including negative chunk coordinates when it searches
+            // around the wall. The old two-chunk fixture (0,0) + (1,0) failed
+            // in GroundNodeGenerator.gravitySnap at block z=-1: the world was
+            // incomplete, not the AI. Supply a finite synthetic navigation area
+            // with a three-chunk margin; no user's Anvil map is involved.
+            for (int cx = -3; cx <= 3; cx++) {
+                for (int cz = -3; cz <= 3; cz++) {
+                    lane.loadChunk(cx, cz).get(10, TimeUnit.SECONDS);
+                }
+            }
+            check(lane.getChunk(0, -1) != null && lane.getChunk(-1, 0) != null,
+                    "native A* has loaded negative-coordinate neighbour chunks");
+            check(lane.getChunk(2, 0) != null,
+                    "native A* can examine terrain beyond the next checkpoint");
             CFUnit shooter = add(lane, archer(), "blue", new Pos(3.5, 8, 4.5), false);
             CFUnit enemy = add(lane, victim(CFDamageTable.Armor.NONE),
                     "red", new Pos(8.5, 8, 4.5), false);

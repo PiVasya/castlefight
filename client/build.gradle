@@ -35,3 +35,34 @@ java {
     withSourcesJar()
 }
 
+
+// The project's client regression tests are plain Java "main" entry points,
+// not JUnit classes. Gradle's Test discovery alone cannot execute them. Run
+// every self-test as a real, failure-propagating JavaExec task during `build`.
+// Gradle's native test discovery stays available for future JUnit tests.
+def clientSelfTestMainClasses = [
+    cfArrowMotionSelfTest: 'dev.cf.client.CFArrowMotionSelfTest',
+    cfOverlayMeshSelfTest: 'dev.cf.client.render.CFOverlayMeshSelfTest',
+    cfOverlayWireClientSelfTest: 'dev.cf.client.render.CFOverlayWireClientSelfTest'
+]
+
+clientSelfTestMainClasses.each { testTaskName, selfTestClass ->
+    tasks.register(testTaskName, JavaExec) {
+        group = 'verification'
+        description = "Executes Castle Fight client regression check: ${selfTestClass}"
+        dependsOn tasks.named('testClasses')
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = selfTestClass
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+        jvmArgs '-ea'
+    }
+}
+
+tasks.named('test', Test) {
+    dependsOn clientSelfTestMainClasses.keySet()
+    // These 3 plain-main regression tests are executed above, so zero JUnit
+    // test methods is expected. Do NOT disable the Test task or self-tests.
+    failOnNoDiscoveredTests = false
+}

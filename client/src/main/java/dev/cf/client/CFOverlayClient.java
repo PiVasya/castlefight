@@ -9,7 +9,7 @@ import dev.cf.protocol.CFShotWire;
 import dev.cf.protocol.CFOverlayWire;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -74,7 +74,7 @@ public final class CFOverlayClient implements ClientModInitializer {
 
         KeyMapping.Category category = KeyMapping.Category.register(
                 Identifier.fromNamespaceAndPath("castlefight", "controls"));
-        KeyMapping key = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        KeyMapping key = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.castlefight.toggle_overlay", InputConstants.Type.KEYSYM,
                 InputConstants.KEY_G, category));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {

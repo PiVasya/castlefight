@@ -25,7 +25,7 @@
 
 ## Сборка
 
-Для исходников мода нужен **JDK 25**, **Gradle 9.5.1+** (рекомендован 9.7.1)
+Для исходников мода нужен **JDK 25**, **Gradle 9.7.0+** (используется 9.7.1)
 и доступ к интернету для скачивания Minecraft 26.2, Fabric Loom и Fabric API.
 
 Открой терминал **в корне общего Git-репозитория**:
@@ -34,7 +34,12 @@
 bash build.sh client
 ```
 
-Скрипт использует Gradle из `PATH` или `client/gradlew`, если он добавлен.
+Скрипт сначала проверяет `client/gradlew` (если он есть) и Gradle из `PATH`.
+Если версия ниже 9.7.0 — например, Fedora Gradle 9.4.1, — он **автоматически**
+скачивает Gradle 9.7.1 с официального сайта, проверяет SHA-256 и размещает
+только в `~/.cache/castlefight/gradle/`. Повторно скачивать не нужно.
+Исходники, Git и папка карты при этом не изменяются. Требуются `unzip`,
+`sha256sum`, а также `curl` или `wget`.
 
 Готовый Fabric JAR будет в `dist/client/castlefight-client.jar` (временные файлы Gradle остаются в `client/build/`).
 Перенеси его в `.minecraft/mods/` профиля Minecraft **26.2 с Fabric**.
@@ -42,6 +47,16 @@ bash build.sh client
 
 Мод **только клиентский**. На сервере не нужны Fabric и Gradle:
 нужна совместимая сборка Minestom из `server/` этого Git-репозитория (сборка `bash build.sh server`).
+
+## Автоматические тесты сборки
+
+Три существующие проверки клиента — это Java-программы с `main()`, а не
+JUnit-тесты. Сборка `bash build.sh client` **действительно выполняет все три**
+как отдельные Gradle-задачи `cfArrowMotionSelfTest`, `cfOverlayMeshSelfTest`,
+`cfOverlayWireClientSelfTest`. Ошибка любой из них прервёт сборку.
+При наличии нескольких независимых ошибок сборка старается вывести их
+за один проход благодаря флагу Gradle `--continue`.
+Подробности: `docs/V10_5_4_CLIENT_SELFTESTS.md`.
 
 ## Проверка
 
