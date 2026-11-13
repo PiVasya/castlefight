@@ -6,10 +6,10 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-/** Server -> Fabric: immutable shot geometry, NOT damage or target authority. */
+/** Server -> Fabric: compact shot IDs, NOT damage or target authority. */
 public record CFShotVisualPayload(byte[] bytes) implements CustomPacketPayload {
     public static final Type<CFShotVisualPayload> TYPE =
-            new Type<>(Identifier.fromNamespaceAndPath("castlefight", "shot_visual_v1"));
+            new Type<>(Identifier.fromNamespaceAndPath("castlefight", "shot_visual_v2"));
     public static final StreamCodec<RegistryFriendlyByteBuf, CFShotVisualPayload> CODEC = StreamCodec.of(
             (buf, payload) -> buf.writeBytes(payload.bytes()),
             buf -> {

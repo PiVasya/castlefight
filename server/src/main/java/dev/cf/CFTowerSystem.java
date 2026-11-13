@@ -2,6 +2,12 @@ package dev.cf;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import dev.cf.protocol.CFBuildWire;
+import dev.cf.protocol.CFShotWire;
+import net.minestom.server.event.player.PlayerPluginMessageEvent;
+import net.minestom.server.event.player.PlayerLoadedEvent;
+import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.command.CommandSender;
 import net.minestom.server.command.builder.Command;
@@ -36,7 +42,8 @@ final class CFTowerSystem {
     private final CFThreeLanes routes;
     private final Map<UUID,String> teams = new ConcurrentHashMap<>();
     private final Map<UUID,String> races = new ConcurrentHashMap<>();
-    private final Map<UUID,Long> clicks = new ConcurrentHashMap<>();
+    private final Map<UUID,Long> buildRequests = new ConcurrentHashMap<>();
+    private final Set<UUID> catalogClients = ConcurrentHashMap.newKeySet();
     private final Map<Long,Tower> towers = new LinkedHashMap<>();
     private final PriorityQueue<Tower> due = new PriorityQueue<>(Comparator
             .comparingLong((Tower t) -> t.next).thenComparingLong(t -> t.id));
@@ -122,37 +129,42 @@ final class CFTowerSystem {
         var page=ArgumentType.Integer("kit-page");
         cf.addSyntax((s,c)->kit(s,c.get(page)),ArgumentType.Literal("kit"),page);
         var team=ArgumentType.Word("play-team").from("red","blue");
-        var race=ArgumentType.Word("play-race").from("all","dark","snow");
+        var race=ArgumentType.Word("play-race").from("dark","snow");
         cf.addSyntax((sender,ctx)->{
             if(!(sender instanceof Player p) || !playAllowed(p))return;
             String selected=ctx.get(race);
             races.put(p.getUuid(),selected);
             giveKit(p,1);
-            p.sendMessage("[CF] Палитра: "+CFTowerPresentation.paletteName(selected)+
+            sendCatalog(p);
+            CFPlayerNotice.send(p,"[CF] Палитра: "+CFTowerPresentation.paletteName(selected)+
                     "; команда: "+CFTowerPresentation.teamName(teams.getOrDefault(p.getUuid(),"blue"))+
                     ". В наборе только строящиеся уровни. /cf tower catalog — ветки прокачки.");
         },ArgumentType.Literal("race"),race);
         cf.addSyntax((s,c)->{
             if (!(s instanceof Player p) || p.getInstance()!=world) return;
             teams.put(p.getUuid(),c.get(team));
-            s.sendMessage("[CF] Команда: "+CFTowerPresentation.teamName(c.get(team))+
+            sendCatalog(p);
+            CFPlayerNotice.send(s,"[CF] Команда: "+CFTowerPresentation.teamName(c.get(team))+
                     ". Строй на цветных коврах своей команды.");
             giveKit(p,1);
         },ArgumentType.Literal("team"),team);
         cf.addSyntax((s,c)->{
-            s.sendMessage("[CF] В каталоге: "+content.mobs().size()+" профилей существ, "+
-                    content.towers().size()+" уровней башен Тьмы и Снегов.");
-            for(var d:content.towers()) s.sendMessage("[CF] "+CFTowerPresentation.title(d,content)+
+            if(s instanceof Player) {
+                CFPlayerNotice.send(s,"Каталог открыт по ПКМ на предмете башни");return;
+            }
+            CFPlayerNotice.send(s,"[CF] В каталоге: "+content.mobs().size()+" существ, "+
+                    content.towers().size()+" башен.");
+            for(var d:content.towers()) CFPlayerNotice.send(s,"[CF] "+CFTowerPresentation.title(d,content)+
                     " | "+CFTowerPresentation.summon(d,content)+
                     " | каждые "+d.intervalSeconds()+" с");
         },ArgumentType.Literal("content"),ArgumentType.Literal("list"));
-        cf.addSyntax((s,c)->s.sendMessage(carpets.summary(world)),
+        cf.addSyntax((s,c)->CFPlayerNotice.send(s,carpets.summary(world)),
                 ArgumentType.Literal("carpets"),ArgumentType.Literal("status"));
         cf.addSyntax((s,c)->{
-            s.sendMessage("[CF] Построено башен: "+count()+"/"+content.limits().towers()+
+            CFPlayerNotice.send(s,"[CF] Построено башен: "+count()+"/"+content.limits().towers()+
                     "; существ: "+units.size()+"/"+content.limits().units()+
                     "; маршруты: "+(routes.ready()?"готовы":"не готовы")+".");
-            synchronized(this) { for (Tower t:towers.values()) s.sendMessage("[CF] #"+t.id+" "+
+            synchronized(this) { for (Tower t:towers.values()) CFPlayerNotice.send(s,"[CF] #"+t.id+" "+
                     CFTowerPresentation.title(t.definition,content)+" | "+
                     CFTowerPresentation.teamName(t.team)+" | линия "+t.lane.id+
                     " | "+t.x+","+t.y+","+t.z+" | призвано "+t.spawned); }
@@ -165,73 +177,71 @@ final class CFTowerSystem {
         cf.addSyntax((sender,ctx)->{
             if(!(sender instanceof Player p)||!playAllowed(p))return;
             long id=ctx.get(infoId).longValue();
-            world.scheduler().scheduleNextTick(()->p.sendMessage(inspectById(id)));
+            world.scheduler().scheduleNextTick(()->CFPlayerNotice.send(p,inspectById(id)));
         },ArgumentType.Literal("tower"),ArgumentType.Literal("info"),infoId);
         cf.addSyntax((sender,ctx)->{
-            if(!(sender instanceof Player p)||!playAllowed(p))return;
-            String palette=races.getOrDefault(p.getUuid(),"all");
-            p.sendMessage("[CF КАТАЛОГ] "+CFTowerPresentation.paletteName(palette)+
-                    ". В строительном наборе всегда первая ступень.");
-            for(var d:CFTowerPresentation.palette(content,palette))
-                p.sendMessage("[CF КАТАЛОГ] "+CFTowerPresentation.tree(d,content));
-            p.sendMessage("[CF КАТАЛОГ] /cf race dark|snow|all — выбрать расу; /cf kit — получить набор.");
+            if(sender instanceof Player p) {
+                CFPlayerNotice.send(p,"ПКМ по предмету — полное меню башни и улучшений");
+            } else {
+                for(var d:content.towers())CFPlayerNotice.send(sender,CFTowerPresentation.tree(d,content));
+            }
         },ArgumentType.Literal("tower"),ArgumentType.Literal("catalog"));
         var upgradeId=ArgumentType.Integer("tower-upgrade-id");
         cf.addSyntax((sender,ctx)->{
             if (!(sender instanceof Player player) || !playAllowed(player))return;
             long id=ctx.get(upgradeId).longValue();
-            world.scheduler().scheduleNextTick(()->player.sendMessage(upgradeById(id,teams.getOrDefault(player.getUuid(),"blue"),false,player.getPosition())));
+            world.scheduler().scheduleNextTick(()->CFPlayerNotice.send(player,upgradeById(id,teams.getOrDefault(player.getUuid(),"blue"),false,player.getPosition())));
         },ArgumentType.Literal("tower"),ArgumentType.Literal("upgrade"),upgradeId);
         var removeId=ArgumentType.Integer("tower-remove-id");
         cf.addSyntax((s,c)->{
             if(!admin(s) || soak.isRunning()) {
-                s.sendMessage("[CF] Demolition requires operator access and no soak test.");return;
+                CFPlayerNotice.send(s,"[CF] Demolition requires operator access and no soak test.");return;
             }
             if(s instanceof Player p && p.getInstance()!=world)return;
             final long id=c.get(removeId).longValue();
-            world.scheduler().scheduleNextTick(()->s.sendMessage(removeById(id)));
+            world.scheduler().scheduleNextTick(()->CFPlayerNotice.send(s,removeById(id)));
         },ArgumentType.Literal("tower"),ArgumentType.Literal("remove"),removeId);
         cf.addSyntax((s,c)->{
             if(!admin(s)||!(s instanceof Player p)||!playAllowed(p))return;
             p.getInventory().addItemStack(demolitionItem());
-            s.sendMessage("[CF] Выдан инструмент сноса: нажми ПКМ на любой блок своей башни.");
+            CFPlayerNotice.send(s,"[CF] Выдан инструмент сноса: нажми ПКМ на любой блок своей башни.");
         },ArgumentType.Literal("tower"),ArgumentType.Literal("tool"));
         cf.addSyntax((s,c)->{
             if(!testAllowed(s, true))return;
-            s.sendMessage(soak.start(128,120));
+            CFPlayerNotice.send(s,soak.start(128,120));
         },ArgumentType.Literal("soak"),ArgumentType.Literal("start"));
         cf.addSyntax((s,c)->{
             if(!testAllowed(s,true))return;
-            s.sendMessage(soak.startVerify());
+            CFPlayerNotice.send(s,soak.startVerify());
         },ArgumentType.Literal("soak"),ArgumentType.Literal("verify"));
         cf.addSyntax((s,c)->{
             if(!testAllowed(s, true))return;
-            s.sendMessage(soak.startNight(96,300));
+            CFPlayerNotice.send(s,soak.startNight(96,300));
         },ArgumentType.Literal("soak"),ArgumentType.Literal("night"));
         cf.addSyntax((s,c)->{
             if(!testAllowed(s, true))return;
-            s.sendMessage(soak.startStress(8,180));
+            CFPlayerNotice.send(s,soak.startStress(8,180));
         },ArgumentType.Literal("soak"),ArgumentType.Literal("stress"));
         var soakRounds=ArgumentType.Integer("soak-rounds");
         var soakSeconds=ArgumentType.Integer("soak-seconds");
         cf.addSyntax((s,c)->{
             if(!testAllowed(s, true))return;
-            s.sendMessage(soak.start(c.get(soakRounds),120));
+            CFPlayerNotice.send(s,soak.start(c.get(soakRounds),120));
         },ArgumentType.Literal("soak"),ArgumentType.Literal("start"),soakRounds);
         cf.addSyntax((s,c)->{
             if(!testAllowed(s, true))return;
-            s.sendMessage(soak.start(c.get(soakRounds),c.get(soakSeconds)));
+            CFPlayerNotice.send(s,soak.start(c.get(soakRounds),c.get(soakSeconds)));
         },ArgumentType.Literal("soak"),ArgumentType.Literal("start"),soakRounds,soakSeconds);
-        cf.addSyntax((s,c)->s.sendMessage(soak.status()),
+        cf.addSyntax((s,c)->CFPlayerNotice.send(s,soak.status()),
                 ArgumentType.Literal("soak"),ArgumentType.Literal("status"));
         cf.addSyntax((s,c)->{
             if(!admin(s))return;
-            s.sendMessage(soak.stop());
+            CFPlayerNotice.send(s,soak.stop());
         },ArgumentType.Literal("soak"),ArgumentType.Literal("stop"));
-        cf.addSyntax((s,c)->s.sendMessage(abilities.status()),
+        cf.addSyntax((s,c)->CFPlayerNotice.send(s,abilities.status()),
                 ArgumentType.Literal("abilities"),ArgumentType.Literal("status"));
         cf.addSyntax((s,c)->{if(s instanceof Player p && admin(s) && playAllowed(p)){
-            giveKit(p,1); s.sendMessage("[CF ТЕСТ] Все начальные башни текущей палитры доступны через /cf kit.");
+            giveKit(p,1); CFPlayerNotice.send(s,"[CF ТЕСТ] Все начальные башни текущей палитры доступны через /cf kit.");
         }},ArgumentType.Literal("test"),ArgumentType.Literal("kit"));
         var testTeam=ArgumentType.Word("test-team").from("blue","red");
         var testType=ArgumentType.Word("test-type");
@@ -240,12 +250,12 @@ final class CFTowerSystem {
             if(!testAllowed(s))return;
             String teamId=c.get(testTeam), mobId=c.get(testType);
             int laneId=c.get(testLane);
-            if(content.mob(mobId)==null){s.sendMessage("[CF TEST] Unknown mob: "+mobId);return;}
+            if(content.mob(mobId)==null){CFPlayerNotice.send(s,"[CF TEST] Unknown mob: "+mobId);return;}
             CFLanePath lane=routes.lane(laneId);
-            if(lane==null){s.sendMessage("[КФ ТЕСТ] Выбери дорожку от 1 до "+routes.laneCount()+".");return;}
+            if(lane==null){CFPlayerNotice.send(s,"[КФ ТЕСТ] Выбери дорожку от 1 до "+routes.laneCount()+".");return;}
             List<Pos> points=lane.forTeam(teamId);
             Pos near=points.get(Math.max(1,Math.min(points.size()-2,points.size()/2+(teamId.equals("blue")?-12:12))));
-            s.sendMessage(spawnAbilityUnit(teamId,mobId,laneId,near)
+            CFPlayerNotice.send(s,spawnAbilityUnit(teamId,mobId,laneId,near)
                     ? "[CF TEST] Spawned "+teamId+" "+mobId+" lane="+laneId
                     : "[CF TEST] No safe space / unit cap. Try another lane.");
         },ArgumentType.Literal("test"),ArgumentType.Literal("spawn"),testTeam,testType,testLane);
@@ -253,35 +263,82 @@ final class CFTowerSystem {
         cf.addSyntax((s,c)->{
             if(!testAllowed(s))return;
             long id=abilities.addVirtualBuilding(c.get(testTeam),c.get(testAbility));
-            s.sendMessage("[CF TEST] Virtual "+c.get(testTeam)+" "+c.get(testAbility)+" activated #"+id);
+            CFPlayerNotice.send(s,"[CF TEST] Virtual "+c.get(testTeam)+" "+c.get(testAbility)+" activated #"+id);
         },ArgumentType.Literal("test"),ArgumentType.Literal("support"),testTeam,testAbility);
         cf.addSyntax((s,c)->{
             if(!testAllowed(s))return;
-            abilities.clearVirtualBuildings();s.sendMessage("[CF TEST] Virtual support buildings cleared.");
+            abilities.clearVirtualBuildings();CFPlayerNotice.send(s,"[CF TEST] Virtual support buildings cleared.");
         },ArgumentType.Literal("test"),ArgumentType.Literal("support"),ArgumentType.Literal("clear"));
         cf.addSyntax((s,c)->{
             if(!testAllowed(s))return;
-            s.sendMessage(testAll(false));
+            CFPlayerNotice.send(s,testAll(false));
         },ArgumentType.Literal("test"),ArgumentType.Literal("all"));
         cf.addSyntax((s,c)->{
             if(!testAllowed(s))return;
-            s.sendMessage(testAll(true));
+            CFPlayerNotice.send(s,testAll(true));
         },ArgumentType.Literal("test"),ArgumentType.Literal("battle"));
         cf.addSyntax((s,c)->{
             if(!testAllowed(s))return;
-            clearTestUnits();s.sendMessage("[CF TEST] Units + virtual buildings cleared; placed towers remain.");
+            clearTestUnits();CFPlayerNotice.send(s,"[CF TEST] Units + virtual buildings cleared; placed towers remain.");
         },ArgumentType.Literal("test"),ArgumentType.Literal("reset"));
-        cf.addSyntax((s,c)->s.sendMessage(abilities.status()),
+        cf.addSyntax((s,c)->CFPlayerNotice.send(s,abilities.status()),
                 ArgumentType.Literal("test"),ArgumentType.Literal("status"));
         var events=MinecraftServer.getGlobalEventHandler();
         events.addListener(PlayerSpawnEvent.class,e->{
             if(e.getPlayer().getInstance()==world) {
                 teams.putIfAbsent(e.getPlayer().getUuid(),"blue");
+                races.putIfAbsent(e.getPlayer().getUuid(),"dark");
                 giveKit(e.getPlayer(),1);
             }
         });
+        events.addListener(PlayerLoadedEvent.class,e->{
+            if(e.getPlayer().getInstance()==world) {
+                Player player=e.getPlayer();
+                teams.putIfAbsent(player.getUuid(),"blue");
+                races.putIfAbsent(player.getUuid(),"dark");
+                player.sendPluginMessage("minecraft:register",
+                        CFBuildWire.BUILD_CHANNEL.getBytes(StandardCharsets.UTF_8));
+            }
+        });
+        events.addListener(PlayerPluginMessageEvent.class,event->{
+            if(CFShotWire.HELLO_CHANNEL.equals(event.getIdentifier())) {
+                Player player=event.getPlayer();
+                if(player.getInstance()==world && CFShotWire.validHello(event.getMessage())
+                        && catalogClients.add(player.getUuid())) sendCatalog(player);
+                return;
+            }
+            if(!CFBuildWire.BUILD_CHANNEL.equals(event.getIdentifier())) return;
+            Player player=event.getPlayer();
+            if(player.getInstance()!=world) return;
+            CFBuildWire.Build request;
+            try {request=CFBuildWire.readBuild(event.getMessage());}
+            catch(IOException ignored) {return;}
+            long now=System.nanoTime();
+            Long last=buildRequests.get(player.getUuid());
+            if(last!=null && now-last<250_000_000L)return;
+            buildRequests.put(player.getUuid(),now);
+            // The server NEVER trusts a client position, team, item, or chosen race.
+            world.scheduler().scheduleNextTick(()->{
+                if(!player.isOnline()||player.getInstance()!=world||!playAllowed(player))return;
+                String id=request.id();
+                String selectedRace=races.getOrDefault(player.getUuid(),"dark");
+                if(!id.startsWith(selectedRace+"_") || !id.equals(player.getItemInMainHand().getTag(TOKEN))) {
+                    CFPlayerNotice.send(player,"Неверная раса или предмет");return;
+                }
+                Pos from=player.getPosition();
+                Pos at=new Pos(request.x()+0.5,request.y(),request.z()+0.5);
+                if(from.distanceSquared(at)>64) {
+                    CFPlayerNotice.send(player,"Слишком далеко");return;
+                }
+                CFPlayerNotice.send(player,placeLogged(player.getUsername(),
+                    teams.getOrDefault(player.getUuid(),"blue"),id,request.x(),request.y(),request.z()));
+                player.getInventory().update(player);
+            });
+        });
         events.addListener(PlayerDisconnectEvent.class,e->{
-            teams.remove(e.getPlayer().getUuid());races.remove(e.getPlayer().getUuid());clicks.remove(e.getPlayer().getUuid());
+            teams.remove(e.getPlayer().getUuid());races.remove(e.getPlayer().getUuid());
+            buildRequests.remove(e.getPlayer().getUuid());
+            catalogClients.remove(e.getPlayer().getUuid());
         });
         events.addListener(PlayerBlockInteractEvent.class,e->{
             Player p=e.getPlayer();
@@ -295,41 +352,22 @@ final class CFTowerSystem {
                 if(DEMOLISH.equals(id) && !admin(p))return;
                 Point clicked=e.getBlockPosition();
                 if(p.getPosition().distanceSquared(clicked)>64) {
-                    p.sendMessage("[CF] Подойди к башне на расстояние не более 8 блоков.");return;
+                    CFPlayerNotice.send(p,"[CF] Подойди к башне на расстояние не более 8 блоков.");return;
                 }
                 if(UPGRADE.equals(id)) {
-                    world.scheduler().scheduleNextTick(()->p.sendMessage(upgradeAt(clicked,teams.getOrDefault(p.getUuid(),"blue"),p.getPosition())));
+                    world.scheduler().scheduleNextTick(()->CFPlayerNotice.send(p,upgradeAt(clicked,teams.getOrDefault(p.getUuid(),"blue"),p.getPosition())));
                 } else if(INSPECT.equals(id)) {
-                    world.scheduler().scheduleNextTick(()->p.sendMessage(inspectAt(clicked)));
+                    world.scheduler().scheduleNextTick(()->CFPlayerNotice.send(p,inspectAt(clicked)));
                 } else {
-                    world.scheduler().scheduleNextTick(()->p.sendMessage(removeAt(clicked)));
+                    world.scheduler().scheduleNextTick(()->CFPlayerNotice.send(p,removeAt(clicked)));
                 }
                 return;
             }
-            long now=System.nanoTime(); Long previous=clicks.get(p.getUuid());
-            if(previous!=null && now-previous<300_000_000L) return;
-            clicks.put(p.getUuid(),now);
-            if(e.getBlockFace()!=BlockFace.TOP) {
-                CFSkeletonMindLog.systemEvent("BUILD_REJECT", "actor",p.getUsername(),
-                        "towerType",id,"reason","CLICK_NOT_TOP",
-                        "clicked",CFTrace.xyz(e.getBlockPosition()),"face",e.getBlockFace().toString());
-                p.sendMessage("[CF СТРОЙКА] Нажми ПКМ по ВЕРХНЕЙ стороне центрального блока площадки 3x3.");return;
-            }
-            Point clicked=e.getBlockPosition();
-            Point at=clicked.relative(BlockFace.TOP);
-            if(p.getPosition().distanceSquared(at)>64) {
-                CFSkeletonMindLog.systemEvent("BUILD_REJECT", "actor",p.getUsername(),
-                        "towerType",id,"reason","TOO_FAR","center",CFTrace.xyz(at),
-                        "playerPosition",CFTrace.xyz(p.getPosition()));
-                p.sendMessage("[CF СТРОЙКА] Слишком далеко: максимум 8 блоков.");return;
-            }
-            // Mutate on the instance tick, after the click packet's normal rollback/ack has completed.
-            world.scheduler().scheduleNextTick(()->{
-                if(!p.isOnline() || p.getInstance()!=world) return;
-                p.sendMessage(placeLogged(p.getUsername(),teams.getOrDefault(p.getUuid(),"blue"),id,at.blockX(),at.blockY(),at.blockZ()));
-                p.sendPacket(new BlockChangePacket(at,world.getBlock(at)));
-                p.getInventory().update(p);
-            });
+            // A tower item does NOT place anything through vanilla world clicks.
+            // Only castlefight:tower_build_v1, after client-side preflight,
+            // may request a new tower. This eliminates the old parallel path.
+            // The existing server plugin-message handler still validates all
+            // game rules itself and rejects forged/malformed requests.
         });
         events.addListener(PlayerBlockPlaceEvent.class,e->{
             if(e.getPlayer().getInstance()==world) {e.setCancelled(true);e.consumeBlock(false);}
@@ -343,71 +381,78 @@ final class CFTowerSystem {
         });
     }
     private static boolean admin(CommandSender s) {
-        if(s instanceof Player p && p.getPermissionLevel()<4) {s.sendMessage("[CF] Нужны права оператора.");return false;}
+        if(s instanceof Player p && p.getPermissionLevel()<4) {CFPlayerNotice.send(s,"[CF] Нужны права оператора.");return false;}
         return true;
     }
     private boolean playAllowed(Player p) {
-        if(duel.getAsBoolean() || soak.isRunning()) {p.sendMessage("[CF] Сначала заверши стресс-тест.");return false;}
+        if(duel.getAsBoolean() || soak.isRunning()) {CFPlayerNotice.send(p,"[CF] Сначала заверши стресс-тест.");return false;}
         return p.getInstance()==world;
     }
     private void kit(CommandSender s,int page) {
         if(s instanceof Player p && playAllowed(p)) giveKit(p,page);
     }
     private void giveKit(Player p,int page) {
-        String palette=races.getOrDefault(p.getUuid(),"all");
+        String palette=races.getOrDefault(p.getUuid(),"dark");
         List<CFContentRegistry.Tower> all=CFTowerPresentation.palette(content,palette);
         final int slots=33; // 0..32: build palette, 33: inspect, 34: upgrade, 35: admin demolition
         int pages=Math.max(1,(all.size()+slots-1)/slots);
         if(page<1||page>pages){
-            p.sendMessage("[CF] Страницы набора: 1.."+pages+". Используй /cf kit <страница>.");
+            CFPlayerNotice.send(p,"[CF] Страницы набора: 1.."+pages+". Используй /cf kit <страница>.");
             return;
         }
         p.getInventory().clear();
         int from=(page-1)*slots,to=Math.min(from+slots,all.size());
         for(int i=from;i<to;i++) {
             var d=all.get(i);
-            String next=d.upgradeTo().isEmpty()?
-                    "Максимальная ступень; улучшений нет":"После постройки улучшай изумрудом";
             p.getInventory().setItemStack(i-from,ItemStack.of(d.item())
                     .withTag(TOKEN,d.id())
-                    .withCustomName(Component.text(CFTowerPresentation.title(d,content),NamedTextColor.AQUA))
-                    .withLore(
-                        Component.text("Строится: "+CFTowerPresentation.stage(d,content),NamedTextColor.GOLD),
-                        Component.text(CFTowerPresentation.summon(d,content),NamedTextColor.WHITE),
-                        Component.text(CFTowerPresentation.combat(d,content),NamedTextColor.GRAY),
-                        Component.text("Появление: каждые "+d.intervalSeconds()+" с",NamedTextColor.GRAY),
-                        Component.text(next,NamedTextColor.YELLOW),
-                        Component.text(CFTowerPresentation.next(d,content),NamedTextColor.GRAY),
-                        Component.text("ПКМ по центру площадки 3x3",NamedTextColor.GREEN)
-                    ));
+                    .withCustomName(Component.text(CFTowerPresentation.title(d,content),NamedTextColor.AQUA)));
         }
         p.getInventory().setItemStack(33,inspectItem());
         p.getInventory().setItemStack(34,upgradeItem());
         if(p.getPermissionLevel()>=4)p.getInventory().setItemStack(35,demolitionItem());
-        p.sendMessage("[CF НАБОР] "+CFTowerPresentation.paletteName(palette)+
+        CFPlayerNotice.send(p,"[CF НАБОР] "+CFTowerPresentation.paletteName(palette)+
                 " | страница "+page+"/"+pages+" | команда "+
                 CFTowerPresentation.teamName(teams.getOrDefault(p.getUuid(),"blue")));
-        p.sendMessage("[CF НАБОР] В наборе первые уровни и особые постройки. Подзорная труба (слот 34) = осмотр; "+
-                "изумруд (слот 35) = улучшить. Уровни 2 и 3 — только через улучшение.");
-        p.sendMessage("[CF НАБОР] /cf tower catalog — все ветки; /cf race dark|snow|all — выбор палитры.");
+
     }
+    private void sendCatalog(Player player) {
+        if(player.getInstance()!=world || !catalogClients.contains(player.getUuid()))return;
+        String race=races.getOrDefault(player.getUuid(),"dark");
+        String team=teams.getOrDefault(player.getUuid(),"blue");
+        List<CFBuildWire.Tower> descriptions=new ArrayList<>();
+        for(var d:content.towers()) {
+            if(!d.id().startsWith(race+"_"))continue;
+            List<CFBuildWire.Mob> mobs=new ArrayList<>();
+            for(var spawn:d.recipe()) {
+                var m=content.mob(spawn.mob());
+                if(m!=null)mobs.add(new CFBuildWire.Mob(m.name(),spawn.count(),m.health10(),
+                        m.damage10(),m.critChancePercent(),m.critDamage10(),m.speed(),m.range(),
+                        m.detection(),m.cooldownMs(),m.combat().type.label,m.combat().armor.label,m.behavior()));
+            }
+            descriptions.add(new CFBuildWire.Tower(d.id(),CFTowerPresentation.title(d,content),
+                    race,d.ability(),d.upgradeTo(),d.intervalSeconds(),mobs));
+        }
+        descriptions.sort(Comparator.comparing(CFBuildWire.Tower::id));
+        try {
+            byte[] bytes=CFBuildWire.catalog(new CFBuildWire.Catalog(race,team,descriptions));
+            player.sendPluginMessage(CFBuildWire.CATALOG_CHANNEL,bytes);
+            System.out.println("[КФ МЕНЮ] Каталог "+race+" отправлен "+player.getUsername()+
+                    ": "+descriptions.size()+" башен, "+bytes.length+" байт, один пакет");
+        } catch(IOException ex) {System.err.println("[КФ МЕНЮ] Ошибка каталога: "+ex);}
+    }
+
     private static ItemStack inspectItem() {
         return ItemStack.of(Material.SPYGLASS).withTag(TOKEN,INSPECT)
-                .withCustomName(Component.text("ОСМОТР БАШНИ | узнать уровень",NamedTextColor.AQUA))
-                .withLore(Component.text("ПКМ по любому блоку построенной башни.",NamedTextColor.GRAY),
-                          Component.text("Покажет уровень, моба, HP, урон и следующую ступень.",NamedTextColor.GRAY));
+                .withCustomName(Component.text("ОСМОТР БАШНИ",NamedTextColor.AQUA));
     }
     private static ItemStack upgradeItem() {
         return ItemStack.of(Material.EMERALD).withTag(TOKEN,UPGRADE)
-                .withCustomName(Component.text("УЛУЧШИТЬ БАШНЮ | на 1 ступень",NamedTextColor.GREEN))
-                .withLore(Component.text("ПКМ по любому блоку СВОЕЙ башни.",NamedTextColor.GRAY),
-                          Component.text("Уровень 1 -> 2 -> 3; улучшение бесплатно.",NamedTextColor.YELLOW),
-                          Component.text("Золотая верхушка = ур. 2; незеритовая = ур. 3.",NamedTextColor.GRAY));
+                .withCustomName(Component.text("УЛУЧШИТЬ БАШНЮ",NamedTextColor.GREEN));
     }
     private static ItemStack demolitionItem() {
         return ItemStack.of(Material.BARRIER).withTag(TOKEN,DEMOLISH)
-                .withCustomName(Component.text("СНЕСТИ БАШНЮ | оператор",NamedTextColor.RED))
-                .withLore(Component.text("ПКМ по любому блоку построенной башни.",NamedTextColor.GRAY));
+                .withCustomName(Component.text("СНЕСТИ БАШНЮ | оператор",NamedTextColor.RED));
     }
     private String placeLogged(String actor,String team,String id,int x,int y,int z) {
         String result=place(actor,team,id,x,y,z);
@@ -446,8 +491,13 @@ final class CFTowerSystem {
         // стоят прямо НА дороге (LODESTONE + STAINED_GLASS). Ни один ковёр
         // не является путевой точкой! См. CFMarkerPalette и MAP_CONTRACT.md.
         int laneId=carpets.footprintLane(team,x,y,z);
-        if(laneId==0)return rejectBuild(actor,team,id,x,y,z,"FOOTPRINT_LANE",
-                "[CF СТРОЙКА] Нужны все 9 клеток одного цвета одной линии для команды "+team+" на одной высоте. Не смешивай цвета линий; ПКМ по ЦЕНТРУ.");
+        if(laneId==0) {
+            CFMarkerPalette.Mark center=carpets.markAt(x,y,z);
+            if(center!=null && !team.equals(center.team()))
+                return rejectBuild(actor,team,id,x,y,z,"WRONG_TEAM","Неверная команда");
+            return rejectBuild(actor,team,id,x,y,z,"FOOTPRINT_LANE",
+                    center==null?"Неверная позиция":"Нужны все 9 ковров одного цвета");
+        }
         CFLanePath lane=routes.lane(laneId);
         if(lane==null)return rejectBuild(actor,team,id,x,y,z,"LANE_NOT_VALIDATED",
                 "[CF СТРОЙКА] Выбранная линия ещё не прошла проверку.","lane",laneId);
@@ -522,7 +572,7 @@ final class CFTowerSystem {
                 double d=p.getPosition().distanceSquared(new Pos(t.x+.5,t.y,t.z+.5));
                 if(d<dist){dist=d;nearest=t;}
             }
-            p.sendMessage(nearest==null ? "[CF] Поблизости (8 блоков) нет башен." : removeTower(nearest));
+            CFPlayerNotice.send(p,nearest==null ? "[CF] Поблизости (8 блоков) нет башен." : removeTower(nearest));
         }});
     }
     private synchronized String inspectAt(Point clicked) {
@@ -626,13 +676,13 @@ final class CFTowerSystem {
     private boolean testAllowed(CommandSender sender,boolean allowSoak) {
         if(!admin(sender))return false;
         if((!allowSoak && soak.isRunning())) {
-            sender.sendMessage("[CF TEST] Soak running; /cf soak status or /cf soak stop.");return false;
+            CFPlayerNotice.send(sender,"[CF TEST] Soak running; /cf soak status or /cf soak stop.");return false;
         }
         if(duel.getAsBoolean() || !routes.ready()) {
-            sender.sendMessage("[КФ ТЕСТ] Нужны проверенные маршруты и отсутствие активной дуэли.");return false;
+            CFPlayerNotice.send(sender,"[КФ ТЕСТ] Нужны проверенные маршруты и отсутствие активной дуэли.");return false;
         }
         if(sender instanceof Player p && p.getInstance()!=world){
-            sender.sendMessage("[CF TEST] Enter this map first.");return false;
+            CFPlayerNotice.send(sender,"[CF TEST] Enter this map first.");return false;
         }
         return true;
     }

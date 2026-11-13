@@ -47,6 +47,7 @@ final class CFUnit extends EntityCreature {
         return a==null?definition.cooldownMs():a.adjustAttackCooldown(this,definition.cooldownMs());
     }
     String contentId() { return definition.id(); }
+    int projectileStyleId() { return definition.projectileStyleId(); }
     String displayName() { return definition.name(); }
     double movementSpeed() { return definition.speed(); }
     String behaviorId() { return definition.behavior(); }

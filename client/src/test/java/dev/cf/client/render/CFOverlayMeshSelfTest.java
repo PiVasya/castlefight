@@ -18,6 +18,14 @@ public final class CFOverlayMeshSelfTest {
             throw new AssertionError("Spatial chunk lookup mismatch");
         if (!different.near(1000,1000,2).isEmpty()) throw new AssertionError("Far geometry was not culled");
         if (different.quads().getLast().alpha() <= 0) throw new AssertionError();
+        var thin = CFOverlayMesh.build(new CFOverlayWire.Geometry("test",List.of(),List.of(path)),.25f);
+        if (thin.quads().size() != 2) throw new AssertionError("Two route ribbons expected");
+        var border = thin.quads().get(0);
+        var fill = thin.quads().get(1);
+        if (Math.abs((fill.ay()-border.ay())-.02f) > .0001f)
+            throw new AssertionError("Overlay border separation");
+        if (Math.abs((border.ay()-path.nodes().get(0).y())-.35f) > .0001f)
+            throw new AssertionError("Route raised by 1/4 block from v10.5");
         System.out.println("[КФ МОД] PASS: реальные границы зоны по цвету, 2 полосы пути, spatial culling");
     }
 }

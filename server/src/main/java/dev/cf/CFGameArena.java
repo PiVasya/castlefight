@@ -22,9 +22,9 @@ final class CFGameArena {
     }
 
     void register(Command cf) {
-        cf.addSyntax((sender, ctx) -> sender.sendMessage(routes.status()),
+        cf.addSyntax((sender, ctx) -> CFPlayerNotice.send(sender,routes.status()),
                 ArgumentType.Literal("routes"), ArgumentType.Literal("status"));
-        cf.addSyntax((sender, ctx) -> sender.sendMessage(CFSkeletonMindLog.status()),
+        cf.addSyntax((sender, ctx) -> CFPlayerNotice.send(sender,CFSkeletonMindLog.status()),
                 ArgumentType.Literal("ai"), ArgumentType.Literal("status"));
         towers.register(cf);
     }

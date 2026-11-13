@@ -57,6 +57,12 @@ public final class CFOverlayMesh {
     }
 
     public static CFOverlayMesh build(CFOverlayWire.Geometry geometry) {
+        return build(geometry, .34f);
+    }
+    /** Route width is client-only and does not alter authoritative route geometry. */
+    public static CFOverlayMesh build(CFOverlayWire.Geometry geometry, float routeWidth) {
+        if (!Float.isFinite(routeWidth) || routeWidth < .20f || routeWidth > .60f)
+            throw new IllegalArgumentException("Route width is outside visual bounds");
         var draw = new ArrayList<Quad>();
         // Same palette, same Y and adjacent X/Z => same build area.
         var present = new HashSet<>(geometry.zones());
@@ -92,8 +98,10 @@ public final class CFOverlayMesh {
                 var a=nodes.get(i-1); var b=nodes.get(i);
                 double len=Math.hypot(b.x()-a.x(),b.z()-a.z());
                 if(len < .001 || len > 30) continue; // no giant diagonals
-                segment(draw,a,b,.86f,0x111018,.87f,.10f);
-                segment(draw,a,b,.58f,color,.78f,.12f);
+                // Thinner paths and a full quarter block higher than V10.5.
+                // Raised borders and fill use separate Y to prevent Z-fighting.
+                segment(draw,a,b,routeWidth+.12f,0x111018,.89f,.35f);
+                segment(draw,a,b,routeWidth,color,.84f,.37f);
             }
         }
         return new CFOverlayMesh(geometry.mapId(),draw);

@@ -236,14 +236,14 @@ public final class Main {
     private void registerCommands() {
         Command cf = new Command("cf");
         cf.setDefaultExecutor((sender, context) ->
-                sender.sendMessage("/cf routes status | /cf ai status | /cf kit | /cf tower catalog | " +
+                CFPlayerNotice.send(sender,"/cf routes status | /cf ai status | /cf kit | /cf tower catalog | " +
                         "/cf duel status | /cf clear | /cf status"));
 
         cf.addSyntax((sender, context) -> {
-            sender.sendMessage("[КФ] Красный замок=" + getCastle("red") + " Синий замок=" + getCastle("blue"));
-            sender.sendMessage(kings.status());
+            CFPlayerNotice.send(sender,"[КФ] Красный замок=" + getCastle("red") + " Синий замок=" + getCastle("blue"));
+            CFPlayerNotice.send(sender,kings.status());
             long alive = units.stream().filter(u -> !u.isDead() && !u.isRemoved()).count();
-            sender.sendMessage("[CF] Living units: " + alive);
+            CFPlayerNotice.send(sender,"[CF] Living units: " + alive);
         }, ArgumentType.Literal("status"));
 
         var spawnTeam = ArgumentType.Word("spawn-team").from("red", "blue");
@@ -271,62 +271,62 @@ public final class Main {
         // /cf duel runs 16 sequential scenarios on the castle map, including four 500-mob stages.
         // /cf duel <number> remains the old manual zombie vs zombie mode.
         cf.addSyntax((sender, context) -> {
-            sender.sendMessage(startSuite(duelSuite, duelSuite::start));
+            CFPlayerNotice.send(sender,startSuite(duelSuite, duelSuite::start));
         }, ArgumentType.Literal("duel"));
         // Cheap, lossless movement + hit investigation. No multi-gigabyte per-AI-tick log.
-        cf.addSyntax((sender, context) -> sender.sendMessage(startSuite(duelSuite, duelSuite::startMotion)),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,startSuite(duelSuite, duelSuite::startMotion)),
                 ArgumentType.Literal("duel"), ArgumentType.Literal("motion"));
         var motionSkeletons = ArgumentType.Integer("motion-skeletons");
         var motionZombies = ArgumentType.Integer("motion-zombies");
         cf.addSyntax((sender, context) ->
-                        sender.sendMessage(startSuite(duelSuite, () -> duelSuite.startMotion(
+                        CFPlayerNotice.send(sender,startSuite(duelSuite, () -> duelSuite.startMotion(
                                 context.get(motionSkeletons), context.get(motionZombies)))),
                 ArgumentType.Literal("duel"), ArgumentType.Literal("motion"),
                 motionSkeletons, motionZombies);
         // Backward-compatible alias: hits mode now also includes compact movement samples.
-        cf.addSyntax((sender, context) -> sender.sendMessage(startSuite(duelSuite, duelSuite::startMotion)),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,startSuite(duelSuite, duelSuite::startMotion)),
                 ArgumentType.Literal("duel"), ArgumentType.Literal("hits"));
         var hitSkeletons = ArgumentType.Integer("hit-skeletons");
         var hitZombies = ArgumentType.Integer("hit-zombies");
         cf.addSyntax((sender, context) ->
-                        sender.sendMessage(startSuite(duelSuite, () -> duelSuite.startMotion(
+                        CFPlayerNotice.send(sender,startSuite(duelSuite, () -> duelSuite.startMotion(
                                 context.get(hitSkeletons), context.get(hitZombies)))),
                 ArgumentType.Literal("duel"), ArgumentType.Literal("hits"),
                 hitSkeletons, hitZombies);
-        cf.addSyntax((sender, context) -> sender.sendMessage(duelStatus()),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,duelStatus()),
                 ArgumentType.Literal("duel"), ArgumentType.Literal("status"));
-        cf.addSyntax((sender, context) -> sender.sendMessage(finishDuel()),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,finishDuel()),
                 ArgumentType.Literal("duel"), ArgumentType.Literal("finish"));
         var duelLane = ArgumentType.Integer("duel-lane");
         cf.addSyntax((sender, context) -> {
             if (!(sender instanceof Player player)) {
-                sender.sendMessage("[CF] Only in-game players can teleport.");
+                CFPlayerNotice.send(sender,"[CF] Only in-game players can teleport.");
                 return;
             }
             Pos camera = activeSuite() == duelSuite && !manualDuel ? duelSuite.camera(context.get(duelLane)) : null;
             if (camera == null) {
-                sender.sendMessage("[CF] Only a test active in the current wave can be viewed (1-16). /cf duel status");
+                CFPlayerNotice.send(sender,"[CF] Only a test active in the current wave can be viewed (1-16). /cf duel status");
                 return;
             }
             (player.getInstance() == world ? player.teleport(camera)
                     : player.setInstance(world, camera)).exceptionally(error -> {
-                sender.sendMessage("[CF] Could not move to the selected map.");
+                CFPlayerNotice.send(sender,"[CF] Could not move to the selected map.");
                 error.printStackTrace();
                 return null;
             });
-            sender.sendMessage("[CF] View test " + context.get(duelLane) + "; /cf map to return.");
+            CFPlayerNotice.send(sender,"[CF] View test " + context.get(duelLane) + "; /cf map to return.");
         }, ArgumentType.Literal("duel"), ArgumentType.Literal("goto"), duelLane);
 
         cf.addSyntax((sender, context) -> {
             if (!(sender instanceof Player player)) {
-                sender.sendMessage("[CF] Only in-game players can return to the map.");
+                CFPlayerNotice.send(sender,"[CF] Only in-game players can return to the map.");
                 return;
             }
             if(!hasBothCastles(sender))return;
             Pos location=mapSpawn();
             (player.getInstance() == world ? player.teleport(location)
                     : player.setInstance(world, location)).exceptionally(error -> {
-                sender.sendMessage("[CF] Could not enter the castle map.");
+                CFPlayerNotice.send(sender,"[CF] Could not enter the castle map.");
                 error.printStackTrace();
                 return null;
             });
@@ -343,14 +343,14 @@ public final class Main {
         cf.addSyntax((sender, context) -> {
             synchronized (this) {
                 if (activeSuite() != null) {
-                    sender.sendMessage("[CF] Diagnostic duel in progress; cannot clear the tests.");
+                    CFPlayerNotice.send(sender,"[CF] Diagnostic duel in progress; cannot clear the tests.");
                     return;
                 }
                 removeAllUnits();
             }
-            sender.sendMessage("[CF] Cleared all units.");
+            CFPlayerNotice.send(sender,"[CF] Cleared all units.");
         }, ArgumentType.Literal("clear"));
-        cf.addSyntax((sender, context) -> sender.sendMessage(kings.status()),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,kings.status()),
                 ArgumentType.Literal("king"), ArgumentType.Literal("status"));
         var hpbarMode = ArgumentType.Word("hpbar-mode").from("on", "off");
         cf.addSyntax((sender, context) -> {
@@ -364,24 +364,24 @@ public final class Main {
                 CFUnit king=kings.king(side);
                 if(king!=null && king.combatAlive())king.setHealthBarVisible(healthBarsEnabled);
             }
-            sender.sendMessage("[CF] Health bars " + (healthBarsEnabled ? "ON" : "OFF"));
+            CFPlayerNotice.send(sender,"[CF] Health bars " + (healthBarsEnabled ? "ON" : "OFF"));
         }, ArgumentType.Literal("hpbar"), hpbarMode);
 
         var traceDuration = ArgumentType.Integer("trace-seconds");
-        cf.addSyntax((sender, context) -> sender.sendMessage(CFTrace.start(20)),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,CFTrace.start(20)),
                 ArgumentType.Literal("trace"), ArgumentType.Literal("start"));
-        cf.addSyntax((sender, context) -> sender.sendMessage(CFTrace.start(context.get(traceDuration))),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,CFTrace.start(context.get(traceDuration))),
                 ArgumentType.Literal("trace"), ArgumentType.Literal("start"), traceDuration);
-        cf.addSyntax((sender, context) -> sender.sendMessage(CFTrace.stop()),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,CFTrace.stop()),
                 ArgumentType.Literal("trace"), ArgumentType.Literal("stop"));
-        cf.addSyntax((sender, context) -> sender.sendMessage(CFTrace.status()),
+        cf.addSyntax((sender, context) -> CFPlayerNotice.send(sender,CFTrace.status()),
                 ArgumentType.Literal("trace"), ArgumentType.Literal("status"));
 
         cf.addSyntax((sender, context) -> {
-            sender.sendMessage("[CF] Arrow stats since startup: fired=" + (arrowShots.get() + CFClientShot.shots())
+            CFPlayerNotice.send(sender,"[CF] Arrow stats since startup: fired=" + (arrowShots.get() + CFClientShot.shots())
                     + " enemyHits=" + (arrowHits.get() + CFClientShot.hits())
                     + " hitBlocks=" + arrowBlocks.get());
-            sender.sendMessage("[CF] Other arrows missed, remain in flight, or expired.");
+            CFPlayerNotice.send(sender,"[CF] Other arrows missed, remain in flight, or expired.");
         }, ArgumentType.Literal("arrows"));
 
         laneTool.register(cf);
@@ -393,13 +393,13 @@ public final class Main {
 
     private boolean hasBothCastles(net.minestom.server.command.CommandSender sender) {
         if (getCastle("red") != null && getCastle("blue") != null) return true;
-        sender.sendMessage("[КФ] Замки ещё не найдены: нужны два одноцветных квадрата глазурованной керамики 3x3");
+        CFPlayerNotice.send(sender,"[КФ] Замки ещё не найдены: нужны два одноцветных квадрата глазурованной керамики 3x3");
         return false;
     }
 
     private boolean validCount(net.minestom.server.command.CommandSender sender, int count) {
         if (count > 0) return true;
-        sender.sendMessage("[CF] Count must be a positive integer.");
+        CFPlayerNotice.send(sender,"[CF] Count must be a positive integer.");
         return false;
     }
 
@@ -467,32 +467,32 @@ public final class Main {
     private void spawnLater(net.minestom.server.command.CommandSender sender,
                             String team, String kind, int count) {
         if (activeSuite() != null) {
-            sender.sendMessage("[CF] Diagnostic duel in progress; do not spawn extra mobs.");
+            CFPlayerNotice.send(sender,"[CF] Diagnostic duel in progress; do not spawn extra mobs.");
             return;
         }
         final long requestedEpoch = spawnEpoch;
-        sender.sendMessage("[CF] Loading route, queued " + count + " " + kind + "(s)...");
+        CFPlayerNotice.send(sender,"[CF] Loading route, queued " + count + " " + kind + "(s)...");
         readyRoute().whenComplete((ignored, error) ->
                 world.scheduler().scheduleNextTick(() -> {
                     if (requestedEpoch != spawnEpoch) return; // /cf clear happened
                     if (error != null) {
                         error.printStackTrace();
-                        sender.sendMessage("[CF] Could not load route.");
+                        CFPlayerNotice.send(sender,"[CF] Could not load route.");
                         return;
                     }
                     synchronized (this) {
                     if (requestedEpoch != spawnEpoch || activeSuite() != null) {
-                        sender.sendMessage("[CF] A duel started while the route was loading; spawn cancelled.");
+                        CFPlayerNotice.send(sender,"[CF] A duel started while the route was loading; spawn cancelled.");
                         return;
                     }
                     List<Pos> positions = spawnPositions(team);
                     if (positions.isEmpty()) {
-                        sender.sendMessage("[CF] No safe spawn positions near the " + team +
+                        CFPlayerNotice.send(sender,"[CF] No safe spawn positions near the " + team +
                                 " castle. Check the map metadata and clear ground near the castle.");
                         return;
                     }
                     spawnTeam(team, kind, count, positions);
-                    sender.sendMessage("[CF] Spawning " + count + " " + team
+                    CFPlayerNotice.send(sender,"[CF] Spawning " + count + " " + team
                             + " " + kind + "(s) in batches of " + SPAWN_PER_TICK + ".");
                     }
                 }));
@@ -504,13 +504,13 @@ public final class Main {
         synchronized (this) {
             reservation = reserveSuite(duelSuite, true);
             if (reservation == 0) {
-                sender.sendMessage("[CF] Diagnostic duel in progress; cannot start a manual duel.");
+                CFPlayerNotice.send(sender,"[CF] Diagnostic duel in progress; cannot start a manual duel.");
                 return;
             }
             removeAllUnits();
             requestedEpoch = spawnEpoch;
         }
-        sender.sendMessage("[CF] Preparing " + count + " vs " + count + " grave zombies...");
+        CFPlayerNotice.send(sender,"[CF] Preparing " + count + " vs " + count + " grave zombies...");
         readyRoute().whenComplete((ignored, error) ->
                 world.scheduler().scheduleNextTick(() -> {
                     if (requestedEpoch != spawnEpoch) {
@@ -520,24 +520,24 @@ public final class Main {
                     if (error != null) {
                         releaseReservation(duelSuite, reservation);
                         error.printStackTrace();
-                        sender.sendMessage("[CF] Could not load route.");
+                        CFPlayerNotice.send(sender,"[CF] Could not load route.");
                         return;
                     }
                     List<Pos> redPositions = spawnPositions("red");
                     List<Pos> bluePositions = spawnPositions("blue");
                     if (redPositions.isEmpty() || bluePositions.isEmpty()) {
                         releaseReservation(duelSuite, reservation);
-                        sender.sendMessage("[CF] No safe spawn positions near " +
+                        CFPlayerNotice.send(sender,"[CF] No safe spawn positions near " +
                                 (redPositions.isEmpty() ? "red" : "blue") +
                                 " castle. Prepare clear ground around the castle in the source map.");
                         return;
                     }
                     String report = beginReserved(duelSuite, reservation, () -> duelSuite.startManual(count));
-                    sender.sendMessage(report);
+                    CFPlayerNotice.send(sender,report);
                     if (!isCurrentSuite(duelSuite, reservation) || !duelSuite.isRunning()) return;
                     spawnTeam("red", "grave_zombie", count, redPositions);
                     spawnTeam("blue", "grave_zombie", count, bluePositions);
-                    sender.sendMessage("[CF] Profiling " + count + " vs " + count
+                    CFPlayerNotice.send(sender,"[CF] Profiling " + count + " vs " + count
                             + " for 70 seconds. /cf duel status");
                 }));
     }

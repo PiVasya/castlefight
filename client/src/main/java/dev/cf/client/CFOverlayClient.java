@@ -6,7 +6,9 @@ import dev.cf.client.render.CFOverlayRenderer;
 import dev.cf.client.render.CFMobHud;
 import dev.cf.protocol.CFMobStatsWire;
 import dev.cf.protocol.CFShotWire;
+import dev.cf.protocol.CFBuildWire;
 import dev.cf.protocol.CFOverlayWire;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -25,14 +27,31 @@ import com.mojang.blaze3d.platform.InputConstants;
 public final class CFOverlayClient implements ClientModInitializer {
     private static final CFOverlayWire.Receiver RECEIVER = new CFOverlayWire.Receiver();
     private static CFOverlayMesh mesh;
+    private static CFOverlayWire.Geometry currentGeometry;
     private static boolean visible;
     private static boolean shotHelloSent;
 
     public static CFOverlayMesh currentMesh() { return visible ? mesh : null; }
+    static void rebuildCurrentMesh() {
+        if (currentGeometry != null) mesh=CFOverlayMesh.build(currentGeometry,
+                CFGraphicsSettings.current().routeWidth());
+    }
 
     @Override public void onInitializeClient() {
+        CFGraphicsSettings.initialize(FabricLoader.getInstance().getConfigDir()
+                .resolve("castlefight-graphics.properties"));
         // Clientbound payload must be registered before the PLAY connection.
         PayloadTypeRegistry.clientboundPlay().register(CFOverlayPayload.TYPE, CFOverlayPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CFTowerCatalogPayload.TYPE, CFTowerCatalogPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CFBuildRequestPayload.TYPE, CFBuildRequestPayload.CODEC);
+        ClientPlayNetworking.registerGlobalReceiver(CFTowerCatalogPayload.TYPE, (payload, context) -> {
+            try {
+                CFBuildWire.Catalog catalog=CFBuildWire.readCatalog(payload.bytes());
+                context.client().execute(()->CFBuildClient.onCatalog(catalog));
+            } catch(java.io.IOException ex) {
+                System.err.println("[КФ КЛИЕНТ] Неверный каталог башен: "+ex.getMessage());
+            }
+        });
         PayloadTypeRegistry.serverboundPlay().register(CFMobStatsRequestPayload.TYPE, CFMobStatsRequestPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(CFMobStatsResponsePayload.TYPE, CFMobStatsResponsePayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(CFShotHelloPayload.TYPE, CFShotHelloPayload.CODEC);
@@ -59,14 +78,15 @@ public final class CFOverlayClient implements ClientModInitializer {
                 try {
                     var ready = RECEIVER.accept(payload.bytes());
                     if (ready != null) {
-                        mesh = CFOverlayMesh.build(ready);
+                        currentGeometry=ready;
+                        rebuildCurrentMesh();
+                        CFBuildClient.onGeometry(ready);
                         if (context.client().player != null)
-                            context.client().player.sendSystemMessage(
-                                    Component.literal("[КФ] Разметка карты «" + ready.mapId() +
-                                            "» получена. Нажми G."));
+                            context.client().gui.hud.setOverlayMessage(
+                                    Component.literal("Разметка загружена · G — показать зоны"),false);
                     }
                 } catch (Exception e) {
-                    RECEIVER.reset(); mesh = null; visible = false;
+                    RECEIVER.reset(); currentGeometry = null; mesh = null; visible = false;
                     System.err.println("[КФ КЛИЕНТ] Некорректные данные разметки: " + e);
                 }
             });
@@ -77,8 +97,12 @@ public final class CFOverlayClient implements ClientModInitializer {
         KeyMapping key = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.castlefight.toggle_overlay", InputConstants.Type.KEYSYM,
                 InputConstants.KEY_G, category));
+        KeyMapping graphicsKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.castlefight.graphics", InputConstants.Type.KEYSYM,
+                InputConstants.KEY_O, category));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             CFMobHover.tick(client);
+            CFBuildClient.tick(client);
             CFArrowRenderer.tick();
             // Minestom advertises the opt-in channel in PLAY, after the join.
             // On unrelated servers, do not send anything or claim mod support.
@@ -89,6 +113,9 @@ public final class CFOverlayClient implements ClientModInitializer {
                         shotHelloSent = true;
                     }
                 } catch (RuntimeException ignored) { /* Server does not support CF shots. */ }
+            }
+            while (graphicsKey.consumeClick()) {
+                client.gui.setScreen(new CFGraphicsScreen());
             }
             while (key.consumeClick()) {
                 if (client.player == null) continue;
@@ -104,15 +131,17 @@ public final class CFOverlayClient implements ClientModInitializer {
         });
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> clear());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clear());
+        CFBuildClient.register();
         CFOverlayRenderer.register();
         CFArrowRenderer.register();
         CFMobHud.register();
     }
 
     private static void clear() {
-        RECEIVER.reset(); mesh=null; visible=false;
+        RECEIVER.reset(); currentGeometry=null; mesh=null; visible=false;
         CFMobHover.clear();
         CFArrowRenderer.clear();
+        CFBuildClient.clear();
         shotHelloSent = false;
     }
 }

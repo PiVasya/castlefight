@@ -84,7 +84,7 @@ final class CFThreeLanes {
                 world.scheduler().scheduleNextTick(()->loadBatch(chunks,0,done,sender,cached));
             }catch(Exception e){fail(done,sender,e);}
         });
-        if(sender!=null)sender.sendMessage("[КФ МАРШРУТЫ] Проверяю карту, маркеры и проходимость дорожек в обе стороны.");
+        if(sender!=null)CFPlayerNotice.send(sender,"[КФ МАРШРУТЫ] Проверяю карту, маркеры и проходимость дорожек в обе стороны.");
         return done;
     }
     private void loadBatch(List<Long> keys,int offset,CompletableFuture<Void> done,
@@ -123,7 +123,7 @@ final class CFThreeLanes {
                     lanes=cached.routes();laneCount=lanes.size();
                     status="ГОТОВО: "+laneCount+" дорожек и два замка из кеша; чанки карты загружены";
                     done.complete(null);System.out.println(status());
-                    if(sender!=null)sender.sendMessage(status());
+                    if(sender!=null)CFPlayerNotice.send(sender,status());
                 }else prepare(blue,red,done,sender);
                 return;
             }
@@ -196,8 +196,8 @@ final class CFThreeLanes {
                     System.err.println("[КФ КАРТА] Не удалось сохранить кеш; при следующем запуске будет повторная проверка: "+writeError);
                 }
                 writeReport(status,null);done.complete(null);
-                if(sender!=null){sender.sendMessage("[КФ МАРШРУТЫ] ПРОВЕРЕНО: "+count+" дорожек, оба направления.");
-                    for(var e:new TreeMap<>(lanes).entrySet())sender.sendMessage("[КФ МАРШРУТЫ] Дорожка "+e.getKey()+": синие="+e.getValue().blue.size()+", красные="+e.getValue().red.size()+" узлов.");}
+                if(sender!=null){CFPlayerNotice.send(sender,"[КФ МАРШРУТЫ] ПРОВЕРЕНО: "+count+" дорожек, оба направления.");
+                    for(var e:new TreeMap<>(lanes).entrySet())CFPlayerNotice.send(sender,"[КФ МАРШРУТЫ] Дорожка "+e.getKey()+": синие="+e.getValue().blue.size()+", красные="+e.getValue().red.size()+" узлов.");}
                 System.out.println(status());
             }catch(Exception e){fail(done,sender,e);}return;
         }
@@ -215,7 +215,7 @@ final class CFThreeLanes {
     private void fail(CompletableFuture<Void> done,CommandSender sender,Throwable e) {
         if(done.isDone())return;
         lanes=Map.of();laneCount=0;castles=Map.of();status="ОШИБКА: "+e.getMessage();System.err.println(status());
-        writeReport(status,e);done.completeExceptionally(e);if(sender!=null)sender.sendMessage(status());
+        writeReport(status,e);done.completeExceptionally(e);if(sender!=null)CFPlayerNotice.send(sender,status());
     }
     private void writeReport(String message,Throwable e){
         CFSkeletonMindLog.systemEvent("ROUTE_VALIDATION","result",message);

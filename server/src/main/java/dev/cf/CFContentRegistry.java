@@ -13,7 +13,15 @@ final class CFContentRegistry {
     record Mob(String id, String name, EntityType entity, String behavior, int health10,
                double speed, int damage10, int critDamage10, int critChancePercent,
                double range, double detection, long cooldownMs, Material weapon,
-               CFDamageTable.Profile combat) {
+               CFDamageTable.Profile combat, int projectileStyleId) {
+        /** Existing pure-Java/Minestom fixtures do not need cosmetic data. */
+        Mob(String id, String name, EntityType entity, String behavior, int health10,
+            double speed, int damage10, int critDamage10, int critChancePercent,
+            double range, double detection, long cooldownMs, Material weapon,
+            CFDamageTable.Profile combat) {
+            this(id,name,entity,behavior,health10,speed,damage10,critDamage10,
+                    critChancePercent,range,detection,cooldownMs,weapon,combat,0);
+        }
         /** Older test fixtures intentionally remain untyped, not silently rebalanced. */
         Mob(String id,String name,EntityType entity,String behavior,int health10,double speed,
             int damage10,int critDamage10,int critChancePercent,double range,double detection,
@@ -66,9 +74,17 @@ final class CFContentRegistry {
                         CFDamageTable.Type.parse(p.getProperty("damage.type", "generic")),
                         CFDamageTable.Armor.parse(p.getProperty("armor.type", "none")),damage10,critDamage);
             } catch(IllegalArgumentException ex) { throw bad(f, ex.getMessage()); }
+            // Ranged attacks transmit exactly one byte of cosmetic type, no styles.
+            int projectileStyleId = 0;
+            if (behavior.equals("ranged_hold")) {
+                projectileStyleId = integer(p, "visual.projectile-id", 0, 255);
+            } else if (p.containsKey("visual.projectile-id")) {
+                throw bad(f, "visual.projectile-id is only valid for ranged_hold units");
+            }
             Mob m = new Mob(id, p.getProperty("name", id), entity, behavior,
                     health10, number(p, "speed", .005, .5), damage10, critDamage, critChance,
-                    range, detection, (long) number(p, "attack.cooldown-ms", 100, 600000), weapon,combat);
+                    range, detection, (long) number(p, "attack.cooldown-ms", 100, 600000),
+                    weapon,combat,projectileStyleId);
             mm.put(id, m);
         }
         if (mm.isEmpty()) throw new IOException("No mob definitions under " + root);

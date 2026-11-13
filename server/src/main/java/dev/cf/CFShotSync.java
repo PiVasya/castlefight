@@ -14,7 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Registers clients that support Fabric-only arrows.
+/** Registers clients that support Fabric-only projectile graphics.
  * Unmodded clients receive no arrow graphics; their battles still work server-side.
  */
 final class CFShotSync {

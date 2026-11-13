@@ -1,6 +1,7 @@
 package dev.cf.client.render;
 
 import dev.cf.client.CFOverlayClient;
+import dev.cf.client.CFGraphicsSettings;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -43,7 +44,6 @@ public final class CFOverlayRenderer {
     private static final Vector4f COLOR = new Vector4f(1,1,1,1);
     private static final Vector3f OFFSET = new Vector3f();
     private static final Matrix4f TEXTURE = new Matrix4f();
-    private static final float MAX_DISTANCE_SQ = 128f*128f;
     private static final int MAX_QUADS_PER_FRAME = 18_000;
 
     private CFOverlayRenderer() {}
@@ -60,6 +60,8 @@ public final class CFOverlayRenderer {
     private static void onRender(LevelRenderContext context) {
         var mesh = extract;
         if (mesh == null || mesh.quads().isEmpty()) return;
+        var settings=CFGraphicsSettings.current();
+        float maxDistanceSq=settings.drawDistance()*settings.drawDistance();
         VertexFormat format = PIPELINE.getVertexFormatBinding(0);
         if (format == null) return;
         PrimitiveTopology primitive = PIPELINE.getPrimitiveTopology();
@@ -72,13 +74,13 @@ public final class CFOverlayRenderer {
         Matrix4fc matrix = pose.last().pose();
         VertexConsumer builder = BUFFER.getVertexBuilder(draw);
         int rendered = 0;
-        for (var quad : mesh.near(camera.x,camera.z,8)) {
+        for (var quad : mesh.near(camera.x,camera.z,(settings.drawDistance()+15)/16)) {
             float dx=(float)(quad.midX()-camera.x),dz=(float)(quad.midZ()-camera.z);
-            if (dx*dx + dz*dz > MAX_DISTANCE_SQ) continue;
-            put(builder,matrix,quad.ax(),quad.ay(),quad.az(),quad.rgb(),quad.alpha());
-            put(builder,matrix,quad.bx(),quad.by(),quad.bz(),quad.rgb(),quad.alpha());
-            put(builder,matrix,quad.cx(),quad.cy(),quad.cz(),quad.rgb(),quad.alpha());
-            put(builder,matrix,quad.dx(),quad.dy(),quad.dz(),quad.rgb(),quad.alpha());
+            if (dx*dx + dz*dz > maxDistanceSq) continue;
+            put(builder,matrix,quad.ax(),quad.ay(),quad.az(),quad.rgb(),quad.alpha() * settings.opacityPercent()/100f);
+            put(builder,matrix,quad.bx(),quad.by(),quad.bz(),quad.rgb(),quad.alpha() * settings.opacityPercent()/100f);
+            put(builder,matrix,quad.cx(),quad.cy(),quad.cz(),quad.rgb(),quad.alpha() * settings.opacityPercent()/100f);
+            put(builder,matrix,quad.dx(),quad.dy(),quad.dz(),quad.rgb(),quad.alpha() * settings.opacityPercent()/100f);
             if (++rendered >= MAX_QUADS_PER_FRAME) break;
         }
         pose.popPose();

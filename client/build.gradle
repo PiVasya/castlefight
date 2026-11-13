@@ -42,6 +42,10 @@ java {
 // Gradle's native test discovery stays available for future JUnit tests.
 def clientSelfTestMainClasses = [
     cfArrowMotionSelfTest: 'dev.cf.client.CFArrowMotionSelfTest',
+    cfGraphicsSettingsSelfTest: 'dev.cf.client.CFGraphicsSettingsSelfTest',
+    cfBuildPreviewSelfTest: 'dev.cf.client.CFBuildPreviewSelfTest',
+    cfBuildEconomySelfTest: 'dev.cf.client.CFBuildEconomySelfTest',
+    cfInventorySlotHitSelfTest: 'dev.cf.client.CFInventorySlotHitSelfTest',
     cfOverlayMeshSelfTest: 'dev.cf.client.render.CFOverlayMeshSelfTest',
     cfOverlayWireClientSelfTest: 'dev.cf.client.render.CFOverlayWireClientSelfTest'
 ]
@@ -62,7 +66,7 @@ clientSelfTestMainClasses.each { testTaskName, selfTestClass ->
 
 tasks.named('test', Test) {
     dependsOn clientSelfTestMainClasses.keySet()
-    // These 3 plain-main regression tests are executed above, so zero JUnit
+    // The plain-main regression tests are executed above, so zero JUnit
     // test methods is expected. Do NOT disable the Test task or self-tests.
     failOnNoDiscoveredTests = false
 }

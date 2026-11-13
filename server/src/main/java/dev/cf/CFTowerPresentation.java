@@ -82,8 +82,10 @@ final class CFTowerPresentation {
     static String title(CFContentRegistry.Tower tower,CFContentRegistry registry) {
         return faction(tower)+" | "+baseName(tower)+" | "+shortStage(tower,registry);
     }
-    /** UI displays the true CF int10 battle-unit number, never a decimal. */
-    static String scaled10(int n) { return Integer.toString(n); }
+    /** CF core stores tenths; show real game HP/damage without trailing .0. */
+    static String scaled10(int n) {
+        return n%10==0 ? Integer.toString(n/10) : String.format(java.util.Locale.ROOT,"%.1f",n/10.0);
+    }
     static String role(CFContentRegistry.Mob mob) {
         return mob.behavior().equals("ranged_hold")?"дальний бой":"ближний бой";
     }

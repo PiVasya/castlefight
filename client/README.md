@@ -50,10 +50,11 @@ bash build.sh client
 
 ## Автоматические тесты сборки
 
-Три существующие проверки клиента — это Java-программы с `main()`, а не
-JUnit-тесты. Сборка `bash build.sh client` **действительно выполняет все три**
-как отдельные Gradle-задачи `cfArrowMotionSelfTest`, `cfOverlayMeshSelfTest`,
-`cfOverlayWireClientSelfTest`. Ошибка любой из них прервёт сборку.
+Клиентские проверки — это Java-программы с `main()`, а не
+JUnit-тесты. Сборка `bash build.sh client` **действительно выполняет все пять**
+как отдельные Gradle-задачи `cfArrowMotionSelfTest`, `cfGraphicsSettingsSelfTest`,
+`cfBuildPreviewSelfTest`, `cfOverlayMeshSelfTest` и `cfOverlayWireClientSelfTest`.
+Ошибка любой из них прервёт сборку.
 При наличии нескольких независимых ошибок сборка старается вывести их
 за один проход благодаря флагу Gradle `--continue`.
 Подробности: `docs/V10_5_4_CLIENT_SELFTESTS.md`.
@@ -62,7 +63,7 @@ JUnit-тесты. Сборка `bash build.sh client` **действительн
 
 1. Запусти обновлённый сервер КФ с подготовленной картой Map 3.0.
 2. Подключись с Minecraft 26.2 с установленными Fabric, Fabric API и модом.
-3. После получения разметки увидишь сообщение в чате: «Разметка ... получена».
+3. После получения разметки появится короткая надпись над хотбаром (не в чате).
 4. Нажми **G**: появятся зоны строительства и полосы пути.
 5. Нажми **G** повторно: исчезнут. Никаких пакетов отправлено не будет.
 
@@ -88,3 +89,30 @@ JUnit-тесты. Сборка `bash build.sh client` **действительн
 Полная сборка Fabric 26.2 и визуальный игровой тест **ещё не подтверждены**
 (в среде подготовки нет JDK25, Gradle и доступа к Maven/Fabric). Если
 `bash build.sh client` выдаст ошибку, отправь лог: поправим именно API несовместимости.
+
+## V10.6 graphics
+G toggles the RAM-only geometry overlay; O opens graphics preferences (route width, opacity, projectile effects, trails and draw distance). All settings live in `config/castlefight-graphics.properties`, without requests to the server. Server sends only 9 bytes per ranged attack: shooter entity id, target entity id, and one numeric projectile type. The Fabric client resolves entity coordinates and renders arrow, bolt, orb, shard, and snowball variants. New client/server JARs are both needed, due to `shot_visual_v2`.
+
+
+## Встроенное меню V10.7
+
+После подключения сервер один раз присылает сжатый каталог выбранной расы.
+Открой инвентарь (E), нажми ПКМ именно по предмету башни: откроется
+большое информационное меню (без запросов к серверу). Закрытие вернёт в инвентарь.
+ПКМ предметом в воздухе меню не открывает. Для постройки возьми его в руку и
+нажми ПКМ по верхней стороне центра ковровой площадки 3×3. Клиент проверит
+дальность, цвет, команду, лайн, пол и место; неверный клик не создаёт запроса.
+После успешной проверки отправляется один пакет, сервер снова валидирует.
+Без Fabric-мода обычное строительство по ПКМ больше не доступно.
+Экономики пока нет — стоимость/баланс не выдумываются, проверка бюджета ждёт
+реализации экономики. Разметка G и снаряды не менялись.
+Переключение расы пока командой `/cf race dark|snow`.
+
+## V10.7.3: fix inventory right click on Minecraft 26.2
+
+The right-click handler now reads the inventory GUI's true origin from the
+`AbstractContainerScreen` fields via a Fabric Mixin accessor, instead of
+calling non-existent `InventoryScreen.getLeftPos()` and `getTopPos()` methods.
+This preserves slot hit testing when the recipe book shifts the inventory.
+The new `cfInventorySlotHitSelfTest` checks 28 geometry cases as part of the
+normal client build. See `docs/V10_7_3_INVENTORY_SCREEN_COORDS.md`.

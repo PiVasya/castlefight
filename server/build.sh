@@ -68,7 +68,7 @@ if [ "${CF_SKIP_SMOKE:-0}" != 1 ]; then
   (
     cd "$TMP/tests"
     java -Xmx1G -cp "$JAR" dev.cf.CF271DamageSelfTest
-    for test in CFMapWindowSelfTest CFCastleMarkersSelfTest CFCastleSpawnsSelfTest CFKingBehaviorSelfTest CFNecromancySelfTest CF271DamageRuntimeSelfTest CF268FactionContentSelfTest CFAbilitiesSelfTest CF22SelfTest CFVerticalTravelSelfTest CFOverlayWireSelfTest CFMobStatsWireSelfTest CFShotWireSelfTest CFCombatHeightSelfTest; do
+    for test in CFMapWindowSelfTest CFCastleMarkersSelfTest CFCastleSpawnsSelfTest CFKingBehaviorSelfTest CFNecromancySelfTest CF271DamageRuntimeSelfTest CF268FactionContentSelfTest CFAbilitiesSelfTest CF22SelfTest CFVerticalTravelSelfTest CFViewSmoothingSelfTest CFOverlayWireSelfTest CFMobStatsWireSelfTest CFShotWireSelfTest CFBuildWireSelfTest CFCombatHeightSelfTest CFMeleeContactStepSelfTest; do
       echo "[CF BUILD] Self-test: $test"
       java -Xmx1G -Dcf.target.meleeReviewTicks=20 -cp "$JAR" "dev.cf.$test" "$REPO/content"
     done

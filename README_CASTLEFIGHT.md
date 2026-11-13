@@ -161,3 +161,45 @@ Fabric-мод. Без мода стрелы не видны, но урон вы�
 или самостоятельно получает официальную версию 9.7.1 в пользовательский
 кеш с проверкой SHA-256. Никаких JAR, сборочных инструментов и карт в
 Git-репозиторий не добавляется. См. `docs/V10_5_2_GRADLE_BOOTSTRAP.md`.
+
+## V10.6
+Fabric-only visual projectiles use 9 payload bytes per shot: shooter ID, target ID and one numeric type. Graphics are solely on the Fabric client. Local graphics menu O; G keeps client-only map overlays. Routes are thinner and raised +0.25 block. Walking yaw is smoothed on stairs. Build both sides with `bash build.sh all`. See `docs/V10_6_MINIMAL_PROJECTILES_GRAPHICS.md`.
+
+
+## V10.7.1 — ПКМ в инвентаре, клиентская проверка перед постройкой
+
+Стартовая раса — `dark`, переключение `/cf race dark|snow`.
+Предметы башен без длинного lore. **ПКМ именно по предмету в открытом инвентаре**
+открывает только информационное меню башни. Закрытие меню возвращает в инвентарь.
+ПКМ башней в воздухе меню не открывает.
+
+Для строительства возьми предмет в руку и нажми ПКМ сверху по центральной
+клетке строительной площадки. Клиент без сетевого запроса проверяет наличие
+каталога, текущую расу/команду, дальность 8 блоков, точный цвет 3×3 и лайн
+из снимка зон, загруженность чанка, пол и свободный объём башни.
+Будущая проверка бюджета предусмотрена, но денег/цен пока нет.
+Только после этих проверок уходит пакет `tower_build_v1`.
+Сервер **не строит по обычному ПКМ**, он принимает только запросы по протоколу
+и самостоятельно повторяет все правила, включая лимиты и расстояния между башнями.
+Ошибки игрок видит над хотбаром, не в чате.
+
+Подробности: `docs/V10_7_1_INVENTORY_RIGHT_CLICK.md`.
+
+## V10.7.2 - исправления компиляции
+
+Исправлено затенение переменной `race` в `CFTowerSystem.register()` и обращение к текущему экрану `mc.gui.screen()` в клиенте 26.2. Подробности: `docs/V10_7_2_COMPILATION_FIX.md`.
+
+## V10.7.3 inventory mouse coordinates
+
+For Minecraft 26.2, the inventory RMB tower inspector uses a mixin accessor
+for `AbstractContainerScreen.leftPos/topPos`. The client build now checks
+inventory slot hit testing with `cfInventorySlotHitSelfTest`. No server changes;
+run `bash build.sh client` and replace the Fabric mod JAR. See
+`docs/V10_7_3_INVENTORY_SCREEN_COORDS.md`.
+
+## V10.7.4 — мини-шаг ближника
+
+При каждой ближней атаке обычный моб делает два коротких шага к цели
+(до 0.30 блока всего), даже если обычный удар уже попал. Это использует
+прежний collision-aware follower, не создаёт новые A* маршруты и не отправляет
+сетевые пакеты. См. `docs/V10_7_4_MELEE_CONTACT_STEP.md`.

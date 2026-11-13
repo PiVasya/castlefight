@@ -44,15 +44,18 @@ final class CFSmoothGroundFollower extends GroundNodeFollower {
             chosen=p;
         }
         Pos view = p.withLookAt(lookAt);
+        // Navigation nodes around stairs can alternate headings every tick.
+        // Filter only the rendered yaw; position, gravity and melee aim remain intact.
+        float walkingYaw = CFViewSmoothing.yaw(p.yaw(), view.yaw());
         // Vanilla mobs are not hard body obstacles for the path follower.
         // Contact is handled through the CFUnit velocity push pass instead.
         if (chosen.y() > p.y()+.001 && steppedTick == unit.getAliveTicks()) {
             CFSkeletonMindLog.event(unit,"GROUND_STEP","rise",chosen.y()-p.y(),
                     "from",CFTrace.xyz(p),"to",CFTrace.xyz(chosen),
                     "decision","COLLISION_AND_CORRIDOR_CHECKED_STEP");
-            unit.groundStep(chosen.withView(view.yaw(),view.pitch()));
+            unit.groundStep(chosen.withView(walkingYaw,view.pitch()));
         }
-        else unit.refreshPosition(chosen.withView(view.yaw(),view.pitch()));
+        else unit.refreshPosition(chosen.withView(walkingYaw,view.pitch()));
     
         } finally { CFMegaPerf.end(CFMegaPerf.Metric.FOLLOWER_MOVE, _cfMegaCost); }
     }

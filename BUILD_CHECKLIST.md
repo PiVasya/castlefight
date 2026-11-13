@@ -77,3 +77,56 @@ Do not run `build.sh` to delete or migrate source files.
 - Не считать `Gradle :test` без обнаруженных JUnit-методов прохождением
   проверок: три программы должны реально запуститься и закончить с кодом 0.
 - Затем проверить `BUILD SUCCESSFUL` и `[CF BUILD] CLIENT SUCCESS`.
+
+## V10.6 compact graphics and smooth movement
+
+- [ ] Root `build.sh` checks all four pairs of shared protocol classes.
+- [ ] `CFShotWireSelfTest` confirms exactly 9 payload bytes, ID bounds and v2 handshake.
+- [ ] `cfArrowMotionSelfTest` and `cfGraphicsSettingsSelfTest` pass as real client JavaExec tasks.
+- [ ] On Minecraft 26.2 Fabric, O opens a client-only settings menu; G still works.
+- [ ] Route ribbons are thinner and exactly 0.25 block higher than v10.5.
+- [ ] Skeleton, mage and snow units have visibly distinct local projectiles.
+- [ ] Packet carries only shooter ID, target ID, visual type ID; no positions or effect data.
+- [ ] Walking yaw no longer oscillates +/-15 degrees on steps (check actual mobs).
+- [ ] Server remains authoritative for hits and damage; no legacy vanilla arrows.
+
+
+## V10.7 — новые интеграционные проверки
+
+- [ ] `CFBuildWireSelfTest` проходит при `bash build.sh server`.
+- [ ] `CFBuildPreviewSelfTest` проходит при `bash build.sh client`.
+- [ ] В меню ПКМ показаны корректные данные и дерево улучшений.
+- [ ] Для чужих/смешанных ковров нет запроса на сервер.
+- [ ] При подтверждении корректной позиции сервер строит ровно одну башню.
+- [ ] При `/cf race snow` палитра и сжатый каталог обновляются.
+- [ ] Нет сообщений игрового КФ в чате; краткий actionbar работает.
+- [ ] Карта и кеш маршрутов не затронуты.
+
+### V10.7.1: инвентарь и клиентская проверка
+
+- [ ] Полный `bash build.sh all` с Java 25 на Fedora, включая `cfBuildEconomySelfTest`.
+- [ ] ПКМ **по ячейке** башни в инвентаре показывает меню, предмет не делится.
+- [ ] ПКМ в мире не открывает меню. Неверная площадка = 0 сетевых запросов.
+- [ ] Валидный ПКМ по центру отправляет один запрос, сервер повторно всё проверяет.
+- [ ] Сервер по обычному `PlayerBlockInteractEvent` башню больше не строит.
+- [ ] Денежная система не выдумана: ожидается будущая реализация экономики.
+
+## V10.7.3 — ПКМ по слоту инвентаря
+
+- [ ] `bash build.sh client` проходит, включая `cfInventorySlotHitSelfTest` (28 проверок).
+- [ ] Fabric Mixin `CFContainerOriginAccessor` зарегистрирован и применяется к `AbstractContainerScreen`.
+- [ ] ПКМ по предмету башни в инвентаре открывает меню без разделения стака.
+- [ ] ПКМ по обычному предмету не перехватывается.
+- [ ] После смещения инвентаря книгой рецептов слот определяется корректно.
+- [ ] Сетевые пакеты строительства не отправляются при просмотре предметов.
+
+## V10.7.4 — ближник коротко шагает при каждой атаке
+
+- [ ] `bash build.sh server` проходит, включая `CFMeleeContactStepSelfTest`.
+- [ ] На каждом взмахе обычный ближник пытается сделать два маленьких
+      шага к своей цели; при нормальном контакте движения не больше 0.30 блока.
+- [ ] За стену не проходит: движение использует существующий ground follower.
+- [ ] Нет нового A*, обнаружения промаха, постоянных проверок дистанции
+      сверх существующего AI или дополнительного сетевого трафика.
+- [ ] Потеря цели останавливает оставшийся микро-подход.
+- [ ] Король и его возврат, дальники и клиентская сборка не изменены.

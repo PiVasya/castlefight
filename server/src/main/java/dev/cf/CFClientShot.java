@@ -88,9 +88,10 @@ final class CFClientShot {
                 Math.max(1, (int) Math.ceil(distance / VISUAL_SPEED)));
         int fabricViewers = 0;
         try {
-            final CFShotWire.Shot shot = new CFShotWire.Shot(arrowId, "blue".equals(shooter.team()),
-                    (float) from.x(), (float) from.y(), (float) from.z(),
-                    (float) aim.x(), (float) aim.y(), (float) aim.z(), hitDelayTicks);
+            // Nine bytes total: shooter id, target id, one numeric projectile type.
+            // The Fabric client already knows the entities and their positions.
+            final CFShotWire.Shot shot = new CFShotWire.Shot(
+                    shooter.getEntityId(), target.getEntityId(), shooter.projectileStyleId());
             final byte[] visualFrame = CFShotWire.write(shot);
             for (Player player : world.getPlayers()) {
                 if (player.getPosition().distanceSquared(from) > VIEW_RANGE_SQ) continue;

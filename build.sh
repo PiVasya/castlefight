@@ -29,6 +29,12 @@ check_protocol() {
     echo '[CF BUILD] Hover-stats protocol sources differ. Sync CFMobStatsWire.java.' >&2
     exit 1
   fi
+  local build_server="$ROOT/server/src/main/java/dev/cf/protocol/CFBuildWire.java"
+  local build_client="$ROOT/client/src/main/java/dev/cf/protocol/CFBuildWire.java"
+  if [ ! -f "$build_server" ] || [ ! -f "$build_client" ] || ! cmp -s -- "$build_server" "$build_client"; then
+    echo '[CF BUILD] Tower-menu protocol sources differ. Sync CFBuildWire.java.' >&2
+    exit 1
+  fi
   local shot_server="$ROOT/server/src/main/java/dev/cf/protocol/CFShotWire.java"
   local shot_client="$ROOT/client/src/main/java/dev/cf/protocol/CFShotWire.java"
   if [ ! -f "$shot_server" ] || [ ! -f "$shot_client" ] || ! cmp -s -- "$shot_server" "$shot_client"; then
